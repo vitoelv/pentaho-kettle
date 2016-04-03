@@ -1,14 +1,42 @@
+/*! ******************************************************************************
+ *
+ * Pentaho Data Integration
+ *
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ *
+ *******************************************************************************
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ ******************************************************************************/
+
 package org.pentaho.di.trans.steps.mysqlbulkloader;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 import junit.framework.Assert;
-
 import org.junit.Test;
+import org.hibernate.dialect.MySQL5Dialect;
+import org.junit.Before;
+import org.junit.BeforeClass;
 import org.mockito.Mockito;
+import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.database.DatabaseMeta;
+import org.pentaho.di.core.database.MySQLDatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleXMLException;
 import org.pentaho.di.core.plugins.PluginRegistry;
@@ -24,8 +52,55 @@ import org.pentaho.metastore.api.IMetaStore;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 
+
 public class MySQLBulkLoaderTest {
 
+  MySQLBulkLoaderMeta lmeta;
+  MySQLBulkLoaderData ldata;
+  MySQLBulkLoader     lder;
+  StepMeta smeta;
+  
+  @BeforeClass
+  public static void initEnvironment() throws Exception {
+    KettleEnvironment.init();
+  }
+
+  @Before
+  public void setUp() {
+    TransMeta transMeta = new TransMeta();
+    transMeta.setName( "MysqlBulkLoader" );
+
+    Map<String, String> vars = new HashMap<String, String>();
+    vars.put( "delim", "," );
+    vars.put( "enclos", "'" );
+    vars.put( "charset", "UTF8" );
+    vars.put( "tbl", "sometable" );
+    vars.put( "schema", "someschema" );
+    transMeta.injectVariables( vars );
+    MySQLDatabaseMeta mysql = new MySQLDatabaseMeta();
+    mysql.setName( "MySQL" );
+    DatabaseMeta dbMeta = new DatabaseMeta();
+    dbMeta.setDatabaseInterface( mysql );
+    dbMeta.setQuoteAllFields( true );
+    lmeta = new MySQLBulkLoaderMeta();
+    lmeta.setDelimiter( "${delim}" );
+    lmeta.setEnclosure( "${enclos}" );
+    lmeta.setEncoding( "${charset}" );
+    lmeta.setTableName( "${tbl}" );
+    lmeta.setSchemaName( "${schema}" );
+    lmeta.setDatabaseMeta( dbMeta );
+    ldata = new MySQLBulkLoaderData();
+    PluginRegistry plugReg = PluginRegistry.getInstance();
+    String mblPid = plugReg.getPluginId( StepPluginType.class, lmeta );
+    smeta = new StepMeta( mblPid, "MySqlBulkLoader", lmeta);
+    Trans trans = new Trans ( transMeta );
+    transMeta.addStep( smeta );
+    lder = new MySQLBulkLoader( smeta, ldata, 1, transMeta, trans );
+    lder.copyVariablesFrom( transMeta );
+    
+  }
+  
+  
   @Test
   public void testFieldFormatType() throws KettleXMLException {
     MySQLBulkLoaderMeta lm = new MySQLBulkLoaderMeta();
@@ -36,6 +111,20 @@ public class MySQLBulkLoaderTest {
     int[] codes = lm.getFieldFormatType();
     Assert.assertEquals( 3, codes[0] );
     Assert.assertEquals( 4, codes[1] );
+  }
+
+  @Test
+  public void testVariableSubstitution() throws KettleException {
+    lder.init( lmeta, ldata );
+    String is = null;
+    is = new String( ldata.quote );
+    Assert.assertEquals( "'", is );
+    is = new String( ldata.separator );
+    Assert.assertEquals( ",", is );
+    Assert.assertEquals( "UTF8", ldata.bulkTimestampMeta.getStringEncoding() );
+    Assert.assertEquals( "UTF8", ldata.bulkDateMeta.getStringEncoding() );
+    Assert.assertEquals( "UTF8", ldata.bulkNumberMeta.getStringEncoding() );
+    Assert.assertEquals(  "`someschema`.`sometable`",  ldata.schemaTable );
   }
 
   @Test

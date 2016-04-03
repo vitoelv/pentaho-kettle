@@ -25,7 +25,7 @@ package org.pentaho.di.ui.job.entries.job;
 import java.io.File;
 import java.io.IOException;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CCombo;
 import org.eclipse.swt.custom.CTabFolder;
@@ -218,8 +218,6 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
   private ObjectId referenceObjectId;
 
   private ObjectLocationSpecificationMethod specificationMethod;
-
-  private Button wForceSeparateLogging;
 
   public JobEntryJobDialog( Shell parent, JobEntryInterface jobEntryInt, Repository rep, JobMeta jobMeta ) {
     super( parent, jobEntryInt, rep, jobMeta );
@@ -696,24 +694,6 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
 
     wLogging.setLayout( groupLayout );
 
-    Label wlForceSeparateLogging = new Label( wLogging, SWT.RIGHT );
-    wlForceSeparateLogging.setText( BaseMessages.getString( PKG, "JobEntryJobDialog.ForceSeparateLogging.Label" ) );
-    props.setLook( wlForceSeparateLogging );
-    FormData fdlForceSeparateLogging = new FormData();
-    fdlForceSeparateLogging.left = new FormAttachment( 0, 0 );
-    fdlForceSeparateLogging.top = new FormAttachment( 0, margin );
-    fdlForceSeparateLogging.right = new FormAttachment( middle, -margin );
-    wlForceSeparateLogging.setLayoutData( fdlForceSeparateLogging );
-    wForceSeparateLogging = new Button( wLogging, SWT.CHECK );
-    props.setLook( wForceSeparateLogging );
-    wForceSeparateLogging.setToolTipText( BaseMessages.getString(
-      PKG, "JobEntryJobDialog.ForceSeparateLogging.Tooltip" ) );
-    FormData fdForceSeparateLogging = new FormData();
-    fdForceSeparateLogging.left = new FormAttachment( middle, 0 );
-    fdForceSeparateLogging.top = new FormAttachment( 0, margin );
-    fdForceSeparateLogging.right = new FormAttachment( 100, 0 );
-    wForceSeparateLogging.setLayoutData( fdForceSeparateLogging );
-
     // Set the logfile?
     //
     wlSetLogfile = new Label( wLogging, SWT.RIGHT );
@@ -721,14 +701,14 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
     props.setLook( wlSetLogfile );
     fdlSetLogfile = new FormData();
     fdlSetLogfile.left = new FormAttachment( 0, 0 );
-    fdlSetLogfile.top = new FormAttachment( wForceSeparateLogging, margin );
+    fdlSetLogfile.top = new FormAttachment( 0, margin );
     fdlSetLogfile.right = new FormAttachment( middle, -margin );
     wlSetLogfile.setLayoutData( fdlSetLogfile );
     wSetLogfile = new Button( wLogging, SWT.CHECK );
     props.setLook( wSetLogfile );
     fdSetLogfile = new FormData();
     fdSetLogfile.left = new FormAttachment( middle, 0 );
-    fdSetLogfile.top = new FormAttachment( wForceSeparateLogging, margin );
+    fdSetLogfile.top = new FormAttachment( 0, margin );
     fdSetLogfile.right = new FormAttachment( 100, 0 );
     wSetLogfile.setLayoutData( fdSetLogfile );
     wSetLogfile.addSelectionListener( new SelectionAdapter() {
@@ -1140,7 +1120,8 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
   protected void newJob() {
     JobMeta newJobMeta = new JobMeta();
     newJobMeta.getDatabases().addAll( jobMeta.getDatabases() );
-    newJobMeta.setRepository( rep );
+    newJobMeta.setRepository( jobMeta.getRepository() );
+    newJobMeta.setRepositoryDirectory( jobMeta.getRepositoryDirectory() );
     newJobMeta.setMetaStore( metaStore );
 
     JobDialog jobDialog = new JobDialog( shell, SWT.NONE, newJobMeta, rep );
@@ -1156,6 +1137,7 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
           saved = spoon.saveToRepository( newJobMeta, false );
           if ( rep.getRepositoryMeta().getRepositoryCapabilities().supportsReferences() ) {
             specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_REFERENCE;
+            referenceObjectId = newJobMeta.getObjectId();
           } else {
             specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_NAME;
           }
@@ -1237,12 +1219,11 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
     setActive();
   }
 
-  private void getByReferenceData( RepositoryElementMetaInterface jobInf ) {
-    String path = jobInf.getRepositoryDirectory().getPath();
-    if ( !path.endsWith( "/" ) ) {
-      path += "/";
+  private void updateByReferenceField( RepositoryElementMetaInterface element ) {
+    String path = getPathOf( element );
+    if ( path == null ) {
+      path = "";
     }
-    path += jobInf.getName();
     wByReference.setText( path );
   }
 
@@ -1252,7 +1233,7 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
       sod.open();
       RepositoryElementMetaInterface repositoryObject = sod.getRepositoryObject();
       if ( repositoryObject != null ) {
-        getByReferenceData( repositoryObject );
+        updateByReferenceField( repositoryObject );
         referenceObjectId = repositoryObject.getObjectId();
         specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_REFERENCE;
         setRadioButtons();
@@ -1458,8 +1439,6 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
     }
     wPassExport.setSelection( jobEntry.isPassingExport() );
 
-    wForceSeparateLogging.setSelection( jobEntry.isForcingSeparateLogging() );
-
     if ( jobEntry.logFileLevel != null ) {
       wLoglevel.select( jobEntry.logFileLevel.getLevel() );
     } else {
@@ -1479,9 +1458,7 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
   private void getByReferenceData( ObjectId referenceObjectId ) {
     try {
       RepositoryObject jobInf = rep.getObjectInformation( referenceObjectId, RepositoryObjectType.JOB );
-      if ( jobInf != null ) {
-        getByReferenceData( jobInf );
-      }
+      updateByReferenceField( jobInf );
     } catch ( KettleException e ) {
       new ErrorDialog( shell,
         BaseMessages.getString( PKG, "JobEntryJobDialog.Exception.UnableToReferenceObjectId.Title" ),
@@ -1577,7 +1554,6 @@ public class JobEntryJobDialog extends JobEntryDialog implements JobEntryDialogI
     }
     jej.setPassingAllParameters( wPassParams.getSelection() );
 
-    jej.setForcingSeparateLogging( wForceSeparateLogging.getSelection() );
     jej.setLogfile = wSetLogfile.getSelection();
     jej.addDate = wAddDate.getSelection();
     jej.addTime = wAddTime.getSelection();

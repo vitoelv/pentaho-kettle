@@ -25,7 +25,7 @@ package org.pentaho.di.ui.trans.steps.jobexecutor;
 import java.io.IOException;
 import java.util.Arrays;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CCombo;
 import org.eclipse.swt.custom.CTabFolder;
@@ -559,7 +559,7 @@ public class JobExecutorDialog extends BaseStepDialog implements StepDialogInter
       RepositoryElementMetaInterface repositoryObject = sod.getRepositoryObject();
       if ( repositoryObject != null ) {
         specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_REFERENCE;
-        getByReferenceData( repositoryObject );
+        updateByReferenceField( repositoryObject );
         referenceObjectId = repositoryObject.getObjectId();
         setRadioButtons();
       }
@@ -607,7 +607,7 @@ public class JobExecutorDialog extends BaseStepDialog implements StepDialogInter
       VfsFileChooserDialog vfsFileChooser = Spoon.getInstance().getVfsFileChooserDialog( root.getParent(), root );
       FileObject file =
         vfsFileChooser.open(
-          shell, null, Const.STRING_TRANS_FILTER_EXT, Const.getJobFilterNames(),
+          shell, null, Const.STRING_JOB_FILTER_EXT, Const.getJobFilterNames(),
           VfsFileChooserDialog.VFS_DIALOG_OPEN_FILE );
       if ( file == null ) {
         return;
@@ -719,12 +719,11 @@ public class JobExecutorDialog extends BaseStepDialog implements StepDialogInter
     setActive();
   }
 
-  private void getByReferenceData( RepositoryElementMetaInterface transInf ) {
-    String path = transInf.getRepositoryDirectory().getPath();
-    if ( !path.endsWith( "/" ) ) {
-      path += "/";
+  private void updateByReferenceField( RepositoryElementMetaInterface element ) {
+    String path = getPathOf( element );
+    if ( path == null ) {
+      path = "";
     }
-    path += transInf.getName();
     wByReference.setText( path );
   }
 
@@ -831,10 +830,8 @@ public class JobExecutorDialog extends BaseStepDialog implements StepDialogInter
         throw new KettleException( BaseMessages.getString(
           PKG, "JobExecutorDialog.Exception.NotConnectedToRepository.Message" ) );
       }
-      RepositoryObject transInf = repository.getObjectInformation( jobObjectId, RepositoryObjectType.JOB );
-      if ( transInf != null ) {
-        getByReferenceData( transInf );
-      }
+      RepositoryObject jobInf = repository.getObjectInformation( jobObjectId, RepositoryObjectType.JOB );
+      updateByReferenceField( jobInf );
     } catch ( KettleException e ) {
       new ErrorDialog( shell,
         BaseMessages.getString( PKG, "JobExecutorDialog.Exception.UnableToReferenceObjectId.Title" ),
@@ -1682,6 +1679,8 @@ public class JobExecutorDialog extends BaseStepDialog implements StepDialogInter
   protected void newJob() {
     JobMeta newJobMeta = new JobMeta();
     newJobMeta.getDatabases().addAll( transMeta.getDatabases() );
+    newJobMeta.setRepository( transMeta.getRepository() );
+    newJobMeta.setRepositoryDirectory( transMeta.getRepositoryDirectory() );
     JobDialog jobDialog = new JobDialog( shell, SWT.NONE, newJobMeta, repository );
     if ( jobDialog.open() != null ) {
       Spoon spoon = Spoon.getInstance();

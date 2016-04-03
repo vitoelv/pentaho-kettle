@@ -22,6 +22,17 @@
 
 package org.pentaho.di.job.entries.trans;
 
+import static org.pentaho.di.job.entry.validator.AndValidator.putValidators;
+import static org.pentaho.di.job.entry.validator.JobEntryValidatorUtils.andValidator;
+import static org.pentaho.di.job.entry.validator.JobEntryValidatorUtils.notBlankValidator;
+import static org.pentaho.di.job.entry.validator.JobEntryValidatorUtils.notNullValidator;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+import java.util.Map;
+
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -38,6 +49,7 @@ import org.pentaho.di.core.logging.LogChannelFileWriter;
 import org.pentaho.di.core.logging.LogLevel;
 import org.pentaho.di.core.parameters.NamedParams;
 import org.pentaho.di.core.parameters.NamedParamsDefault;
+import org.pentaho.di.core.util.CurrentDirectoryResolver;
 import org.pentaho.di.core.util.FileUtil;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.vfs.KettleVFS;
@@ -69,15 +81,6 @@ import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.www.SlaveServerTransStatus;
 import org.pentaho.metastore.api.IMetaStore;
 import org.w3c.dom.Node;
-
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.List;
-import java.util.Map;
-
-import static org.pentaho.di.job.entry.validator.AndValidator.putValidators;
-import static org.pentaho.di.job.entry.validator.JobEntryValidatorUtils.*;
 
 /**
  * This is the job entry that defines a transformation to be run.
@@ -645,7 +648,15 @@ public class JobEntryTrans extends JobEntryBase implements Cloneable, JobEntryIn
     // the repository is down.
     // Log the stack trace and return an error condition from this
     //
-    TransMeta transMeta = getTransMeta( rep, metaStore, this );
+    TransMeta transMeta = null;
+    try {
+      transMeta = getTransMeta( rep, metaStore, this );
+    } catch ( KettleException e ) {
+      logError( Const.getStackTracker( e ) );
+      result.setNrErrors( 1 );
+      result.setResult( false );
+      return result;
+    }
 
     int iteration = 0;
     String[] args1 = arguments;
@@ -865,6 +876,10 @@ public class JobEntryTrans extends JobEntryBase implements Cloneable, JobEntryIn
           //
           executionConfiguration.setArgumentStrings( args );
 
+          if ( parentJob.getJobMeta().isBatchIdPassed() ) {
+            executionConfiguration.setPassedBatchId( parentJob.getPassedBatchId() );
+          }
+
           TransSplitter transSplitter = null;
           long errors = 0;
           try {
@@ -940,6 +955,10 @@ public class JobEntryTrans extends JobEntryBase implements Cloneable, JobEntryIn
               Const.NVL( transMeta.getParameterValue( param ), Const.NVL(
                 transMeta.getParameterDefault( param ), transMeta.getVariable( param ) ) );
             params.put( param, value );
+          }
+
+          if ( parentJob.getJobMeta().isBatchIdPassed() ) {
+            transExecutionConfiguration.setPassedBatchId( parentJob.getPassedBatchId() );
           }
 
           // Send the XML over to the slave server
@@ -1035,6 +1054,9 @@ public class JobEntryTrans extends JobEntryBase implements Cloneable, JobEntryIn
           //
           trans.setRepository( rep );
 
+          // inject the metaStore
+          trans.setMetaStore( metaStore );
+
           // First get the root job
           //
           Job rootJob = parentJob;
@@ -1063,11 +1085,16 @@ public class JobEntryTrans extends JobEntryBase implements Cloneable, JobEntryIn
 
             // Wait until we're done with it...
             //TODO is it possible to implement Observer pattern to avoid Thread.sleep here?
-            while ( !trans.isFinished() && !parentJob.isStopped() && trans.getErrors() == 0 ) {
-              try {
-                Thread.sleep( 0, 500 );
-              } catch ( InterruptedException e ) {
-                // Ignore errors
+            while ( !trans.isFinished() && trans.getErrors() == 0 ) {
+              if ( parentJob.isStopped() ) {
+                trans.stopAll();
+                break;
+              } else {
+                try {
+                  Thread.sleep( 0, 500 );
+                } catch ( InterruptedException e ) {
+                  // Ignore errors
+                }
               }
             }
             trans.waitUntilFinished();
@@ -1147,15 +1174,44 @@ public class JobEntryTrans extends JobEntryBase implements Cloneable, JobEntryIn
   public TransMeta getTransMeta( Repository rep, IMetaStore metaStore, VariableSpace space ) throws KettleException {
     try {
       TransMeta transMeta = null;
+      CurrentDirectoryResolver r = new CurrentDirectoryResolver();
+      VariableSpace tmpSpace = r.resolveCurrentDirectory(
+          specificationMethod, space, rep, parentJob, getFilename() );
       switch( specificationMethod ) {
         case FILENAME:
-          String filename = space.environmentSubstitute( getFilename() );
-          logBasic( "Loading transformation from XML file [" + filename + "]" );
-          transMeta = new TransMeta( filename, null, true, this );
+          String realFilename = tmpSpace.environmentSubstitute( getFilename() );
+          if ( rep != null ) {
+            realFilename = r.normalizeSlashes( realFilename );
+            // need to try to load from the repository
+            try {
+              String dirStr = realFilename.substring( 0, realFilename.lastIndexOf( "/" ) );
+              String tmpFilename = realFilename.substring( realFilename.lastIndexOf( "/" ) + 1 );
+              RepositoryDirectoryInterface dir = rep.findDirectory( dirStr );
+              transMeta = rep.loadTransformation( tmpFilename, dir, null, true, null );
+            } catch ( KettleException ke ) {
+              // try without extension
+              if ( realFilename.endsWith( Const.STRING_TRANS_DEFAULT_EXT ) ) {
+                try {
+                  String tmpFilename = realFilename.substring( realFilename.lastIndexOf( "/" ) + 1,
+                      realFilename.indexOf( "." + Const.STRING_TRANS_DEFAULT_EXT ) );
+                  String dirStr = realFilename.substring( 0, realFilename.lastIndexOf( "/" ) );
+                  RepositoryDirectoryInterface dir = rep.findDirectory( dirStr );
+                  transMeta = rep.loadTransformation( tmpFilename, dir, null, true, null );
+                } catch ( KettleException ke2 ) {
+                  // fall back to try loading from file system (transMeta is going to be null)
+                }
+              }
+            }
+          }
+          if ( transMeta == null ) {
+            logBasic( "Loading transformation from XML file [" + realFilename + "]" );
+            transMeta = new TransMeta( realFilename, metaStore, null, true, this, null );
+          }
           break;
         case REPOSITORY_BY_NAME:
-          String transname = space.environmentSubstitute( getTransname() );
-          String realDirectory = space.environmentSubstitute( getDirectory() );
+          String transname = tmpSpace.environmentSubstitute( getTransname() );
+          String realDirectory = tmpSpace.environmentSubstitute( getDirectory() );
+
           logBasic( BaseMessages.getString( PKG, "JobTrans.Log.LoadingTransRepDirec", transname, realDirectory ) );
 
           if ( rep != null ) {
@@ -1165,10 +1221,23 @@ public class JobEntryTrans extends JobEntryBase implements Cloneable, JobEntryIn
             //
             // It reads last the last revision from the repository.
             //
+            realDirectory = r.normalizeSlashes( realDirectory );
+
             RepositoryDirectoryInterface repositoryDirectory = rep.findDirectory( realDirectory );
             transMeta = rep.loadTransformation( transname, repositoryDirectory, null, true, null );
           } else {
-            throw new KettleException( BaseMessages.getString( PKG, "JobTrans.Exception.NoRepDefined" ) );
+            // rep is null, let's try loading by filename
+            try {
+              transMeta = new TransMeta( realDirectory + "/" + transname, metaStore, null, true, this, null );
+            } catch ( KettleException ke ) {
+              try {
+                // add .ktr extension and try again
+                transMeta = new TransMeta( realDirectory + "/" + transname + "." + Const.STRING_TRANS_DEFAULT_EXT,
+                    metaStore, null, true, this, null );
+              } catch ( KettleException ke2 ) {
+                throw new KettleException( BaseMessages.getString( PKG, "JobTrans.Exception.NoRepDefined" ), ke2 );
+              }
+            }
           }
           break;
         case REPOSITORY_BY_REFERENCE:
@@ -1201,7 +1270,6 @@ public class JobEntryTrans extends JobEntryBase implements Cloneable, JobEntryIn
 
       return transMeta;
     } catch ( Exception e ) {
-
       throw new KettleException( BaseMessages.getString( PKG, "JobTrans.Exception.MetaDataLoad" ), e );
     }
   }

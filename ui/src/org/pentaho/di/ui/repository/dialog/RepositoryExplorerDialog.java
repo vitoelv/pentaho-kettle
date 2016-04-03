@@ -2645,6 +2645,7 @@ public class RepositoryExplorerDialog extends Dialog {
       //
       SelectDirectoryDialog sdd = new SelectDirectoryDialog( shell, SWT.NONE, rep );
       RepositoryDirectoryInterface baseDirectory = sdd.open();
+      
       if ( baseDirectory != null ) {
         // Finally before importing, ask for a version comment (if applicable)
         //
@@ -2653,12 +2654,11 @@ public class RepositoryExplorerDialog extends Dialog {
         while ( !versionOk ) {
           versionComment =
             RepositorySecurityUI.getVersionComment( shell, rep, "Import of files into ["
-              + baseDirectory.getPath() + "]" );
+              + baseDirectory.getPath() + "]", "", true );
 
           // if the version comment is null, the user hit cancel, exit.
           if ( rep != null
-            && rep.getSecurityProvider() != null && rep.getSecurityProvider().allowsVersionComments()
-            && versionComment == null ) {
+            && rep.getSecurityProvider() != null && versionComment == null ) {
             return;
           }
           if ( Const.isEmpty( versionComment ) && rep.getSecurityProvider().isVersionCommentMandatory() ) {
@@ -2754,7 +2754,7 @@ public class RepositoryExplorerDialog extends Dialog {
   public void newSlaveServer() {
     try {
       SlaveServer slaveServer = new SlaveServer();
-      SlaveServerDialog dd = new SlaveServerDialog( shell, slaveServer );
+      SlaveServerDialog dd = new SlaveServerDialog( shell, slaveServer, rep.getSlaveServers() );
       if ( dd.open() ) {
         // See if this slave server already exists...
         ObjectId idSlave = rep.getSlaveID( slaveServer.getName() );

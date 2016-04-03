@@ -22,6 +22,9 @@
 
 package org.pentaho.di.ui.repository.dialog;
 
+import java.util.Collections;
+import java.util.Set;
+
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.MenuDetectEvent;
 import org.eclipse.swt.events.MenuDetectListener;
@@ -84,6 +87,16 @@ public class SelectDirectoryDialog extends Dialog {
 
   private boolean readOnly;
 
+  private Set<String> restrictedPaths = Collections.<String>emptySet();
+
+  public void setRestrictedPaths( Set<String> restrictedPaths ) {
+    this.restrictedPaths = restrictedPaths;
+  }
+
+  private boolean isRestrictedPath( String path ) {
+    return restrictedPaths.contains( path );
+  }
+
   public SelectDirectoryDialog( Shell parent, int style, Repository rep ) {
     super( parent, style );
     this.props = PropsUI.getInstance();
@@ -100,7 +113,7 @@ public class SelectDirectoryDialog extends Dialog {
     Shell parent = getParent();
     shell = new Shell( parent, SWT.DIALOG_TRIM | SWT.RESIZE | SWT.MAX | SWT.MIN );
     props.setLook( shell );
-    shell.setImage( GUIResource.getInstance().getImageConnection() );
+    shell.setImage( GUIResource.getInstance().getImageSpoon() );
     shell.setText( BaseMessages.getString( PKG, "SelectDirectoryDialog.Dialog.Main.Title" ) );
 
     FormLayout formLayout = new FormLayout();
@@ -176,8 +189,33 @@ public class SelectDirectoryDialog extends Dialog {
     } );
 
     wTree.addSelectionListener( new SelectionAdapter() {
-      public void widgetDefaultSelected( SelectionEvent arg0 ) {
+      private String getSelectedPath( SelectionEvent selectionEvent ) {
+        TreeItem treeItem = (TreeItem) selectionEvent.item;
+        String path;
+        if ( treeItem.getParentItem() == null ) {
+          path = treeItem.getText();
+        } else {
+          path = ConstUI.getTreePath( treeItem, 0 );
+        }
+        return path;
+      }
+
+      private boolean isSelectedPathRestricted( SelectionEvent selectionEvent ) {
+        String path = getSelectedPath( selectionEvent );
+        boolean isRestricted = isRestrictedPath( path );
+        return isRestricted;
+      }
+
+      public void widgetDefaultSelected( SelectionEvent selectionEvent ) {
+        if ( isSelectedPathRestricted( selectionEvent ) ) {
+          return;
+        }
         handleOK();
+      }
+
+      public void widgetSelected( SelectionEvent selectionEvent ) {
+        boolean restricted = isSelectedPathRestricted( selectionEvent );
+        wOK.setEnabled( !restricted );
       }
     } );
 
@@ -212,7 +250,7 @@ public class SelectDirectoryDialog extends Dialog {
     }
 
     tiTree = new TreeItem( wTree, SWT.NONE );
-    tiTree.setImage( GUIResource.getInstance().getImageFolderConnections() );
+    tiTree.setImage( GUIResource.getInstance().getImageFolder() );
     RepositoryDirectoryUI.getDirectoryTree( tiTree, dircolor, repositoryTree );
     tiTree.setExpanded( true );
 
@@ -256,7 +294,7 @@ public class SelectDirectoryDialog extends Dialog {
                   dir.addSubdirectory( subdir );
                   TreeItem tiNew = new TreeItem( ti, SWT.NONE );
                   tiNew.setText( newdir );
-                  tiNew.setImage( GUIResource.getInstance().getImageArrow() );
+                  tiNew.setImage( GUIResource.getInstance().getImageFolder() );
                   wTree.setSelection( new TreeItem[] { tiNew } );
                 } catch ( Exception exception ) {
                   new ErrorDialog( shell, BaseMessages.getString(

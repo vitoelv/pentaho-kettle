@@ -26,18 +26,22 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.provider.local.LocalFile;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.provider.local.LocalFile;
 import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.poifs.filesystem.NPOIFSFileSystem;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.pentaho.di.core.exception.KettleException;
+import org.pentaho.di.core.logging.KettleLogStore;
+import org.pentaho.di.core.logging.LogChannelInterface;
 import org.pentaho.di.core.spreadsheet.KSheet;
 import org.pentaho.di.core.spreadsheet.KWorkbook;
 import org.pentaho.di.core.vfs.KettleVFS;
 
 public class PoiWorkbook implements KWorkbook {
+
+  private LogChannelInterface log;
 
   private Workbook workbook;
   private String filename;
@@ -50,7 +54,7 @@ public class PoiWorkbook implements KWorkbook {
   public PoiWorkbook( String filename, String encoding ) throws KettleException {
     this.filename = filename;
     this.encoding = encoding;
-
+    this.log = KettleLogStore.getLogChannelInterfaceFactory().create( this );
     try {
       FileObject fileObject = KettleVFS.getFileObject( filename );
       if ( fileObject instanceof LocalFile ) {
@@ -101,7 +105,7 @@ public class PoiWorkbook implements KWorkbook {
         opcpkg.revert();
       }
     } catch ( IOException ex ) {
-      // Ignore errors
+      log.logError( "Could not close workbook", ex );
     }
   }
 

@@ -24,10 +24,14 @@ package org.pentaho.di.ui.core.dialog;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import org.apache.commons.lang.StringUtils;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.DisposeEvent;
 import org.eclipse.swt.events.DisposeListener;
@@ -42,18 +46,19 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.SwtUniversalImage;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.logging.LogChannel;
 import org.pentaho.di.core.logging.LogChannelInterface;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.laf.BasePropertyHandler;
 import org.pentaho.di.ui.spoon.Spoon;
-import org.pentaho.di.ui.util.ImageUtil;
+import org.pentaho.di.ui.util.SwtSvgImageUtil;
 import org.pentaho.di.version.BuildVersion;
 
 /**
  * Displays the Kettle splash screen
- *
+ * 
  * @author Matt
  * @since 14-mrt-2005
  */
@@ -78,16 +83,20 @@ public class Splash {
   private static LogChannelInterface log;
 
   public Splash( Display display ) throws KettleException {
+    this( display, new Shell( display, SWT.APPLICATION_MODAL ) );
+  }
+
+  protected Splash( Display display, Shell splashShell ) throws KettleException {
     log = new LogChannel( Spoon.APP_NAME );
 
     Rectangle displayBounds = display.getPrimaryMonitor().getBounds();
 
     // "kettle_splash.png"
-    kettle_image = ImageUtil.getImageAsResource( display, BasePropertyHandler.getProperty( "splash_image" ) );
+    kettle_image = loadAsResource( display, BasePropertyHandler.getProperty( "splash_image" ) );
     // "spoon.ico"
-    kettle_icon = ImageUtil.getImageAsResource( display, BasePropertyHandler.getProperty( "splash_icon" ) );
+    kettle_icon = loadAsResource( display, BasePropertyHandler.getProperty( "splash_icon" ) );
     // "exclamation.png"
-    exclamation_image = ImageUtil.getImageAsResource( display, BasePropertyHandler.getProperty( "exclamation_image" ) );
+    exclamation_image = loadAsResource( display, BasePropertyHandler.getProperty( "exclamation_image" ) );
 
     verFont = new Font( display, "Helvetica", 11, SWT.BOLD );
     licFont = new Font( display, "Helvetica", licFontSize, SWT.NORMAL );
@@ -97,23 +106,20 @@ public class Splash {
     versionWarningBackgroundColor = new Color( display, 255, 255, 255 );
     versionWarningForegroundColor = new Color( display, 220, 177, 20 );
 
-    splash = new Shell( display, SWT.APPLICATION_MODAL );
+    splash = splashShell;
     splash.setImage( kettle_icon );
 
     splash.setText( BaseMessages.getString( PKG, "SplashDialog.Title" ) ); // "Pentaho Data Integration"
 
     splash.addPaintListener( new PaintListener() {
       public void paintControl( PaintEvent e ) {
-        String versionText =
-          BaseMessages.getString( PKG, "SplashDialog.Version" ) + " " + BuildVersion.getInstance().getVersion();
-
         StringBuilder sb = new StringBuilder();
         String line = null;
 
         try {
           BufferedReader reader =
-            new BufferedReader( new InputStreamReader( Splash.class.getClassLoader().getResourceAsStream(
-              "org/pentaho/di/ui/core/dialog/license/license.txt" ) ) );
+              new BufferedReader( new InputStreamReader( Splash.class.getClassLoader().getResourceAsStream(
+                  "org/pentaho/di/ui/core/dialog/license/license.txt" ) ) );
 
           while ( ( line = reader.readLine() ) != null ) {
             sb.append( line + System.getProperty( "line.separator" ) );
@@ -125,22 +131,45 @@ public class Splash {
         Calendar cal = Calendar.getInstance();
         String licenseText = String.format( sb.toString(), cal );
         e.gc.drawImage( kettle_image, 0, 0 );
-
-        // If this is a Milestone or RC release, warn the user
-        if ( Const.RELEASE.equals( Const.ReleaseType.MILESTONE ) ) {
-          versionText = BaseMessages.getString( PKG, "SplashDialog.DeveloperRelease" ) + " - " + versionText;
-          drawVersionWarning( e );
-        } else if ( Const.RELEASE.equals( Const.ReleaseType.RELEASE_CANDIDATE ) ) {
-          versionText = BaseMessages.getString( PKG, "SplashDialog.ReleaseCandidate" ) + " - " + versionText;
-        } else if ( Const.RELEASE.equals( Const.ReleaseType.PREVIEW ) ) {
-          versionText = BaseMessages.getString( PKG, "SplashDialog.PreviewRelease" ) + " - " + versionText;
-        } else if ( Const.RELEASE.equals( Const.ReleaseType.GA ) ) {
-          versionText = BaseMessages.getString( PKG, "SplashDialog.GA" ) + " - " + versionText;
+        
+        String fullVersionText =  BaseMessages.getString( PKG, "SplashDialog.Version" );
+        String buildVersion = BuildVersion.getInstance().getVersion();
+        if ( StringUtils.ordinalIndexOf( buildVersion,".", 2 ) > 0 ) {
+          fullVersionText =  fullVersionText + " "  + buildVersion.substring( 0, StringUtils.ordinalIndexOf( buildVersion,".", 2 ) );
+        } else {
+          fullVersionText =  fullVersionText + " "  + buildVersion;
         }
-
         e.gc.setFont( verFont );
-        e.gc.drawText( versionText, 290, 205, true );
+        e.gc.drawText( fullVersionText, 290, 205, true );
 
+        String inputStringDate = BuildVersion.getInstance().getBuildDate();
+        String outputStringDate = "";
+        SimpleDateFormat inputFormat = null;
+        SimpleDateFormat outputFormat = null;
+    
+        if ( inputStringDate.matches( "^\\d{4}/\\d{1,2}/\\d{1,2}\\s\\d{1,2}:\\d{2}:\\d{2}.\\d{3}$" ) ) {
+          inputFormat = new SimpleDateFormat( "yyyy/MM/dd hh:mm:ss.SSS" );
+        }
+        if ( inputStringDate.matches( "^\\d{4}-\\d{1,2}-\\d{1,2}\\_\\d{1,2}-\\d{2}-\\d{2}$" ) ) {
+          inputFormat = new SimpleDateFormat( "yyyy-MM-dd_hh-mm-ss" );
+        }
+        if ( inputStringDate.matches( "^\\d{4}-\\d{1,2}-\\d{1,2}\\s\\d{1,2}.\\d{2}.\\d{2}$" ) ) {
+          inputFormat = new SimpleDateFormat( "yyyy-MM-dd hh.mm.ss" );
+        }
+        outputFormat = new SimpleDateFormat( "MMMM d, yyyy hh:mm:ss" );
+        try {
+          if ( inputFormat != null ) {
+            Date date = inputFormat.parse( inputStringDate );
+            outputStringDate = outputFormat.format( date );
+          } else {
+            // If date isn't correspond to formats above just show date in origin format
+            outputStringDate = inputStringDate;
+          }
+        } catch ( ParseException pe ) {
+          // Just show date in origin format
+          outputStringDate = inputStringDate;
+        }        
+        
         // try using the desired font size for the license text
         e.gc.setFont( licFont );
 
@@ -154,7 +183,24 @@ public class Splash {
           e.gc.setFont( licFont );
         }
 
-        e.gc.drawText( licenseText, 290, 290, true );
+        e.gc.drawText( licenseText, 290, 275, true );
+        
+        String version =  buildVersion;
+        // If this is a Milestone or RC release, warn the user
+        if ( Const.RELEASE.equals( Const.ReleaseType.MILESTONE ) ) {
+          version = BaseMessages.getString( PKG, "SplashDialog.DeveloperRelease" ) + " - " + version;
+          drawVersionWarning( e );
+        } else if ( Const.RELEASE.equals( Const.ReleaseType.RELEASE_CANDIDATE ) ) {
+          version = BaseMessages.getString( PKG, "SplashDialog.ReleaseCandidate" ) + " - " + version;
+        } else if ( Const.RELEASE.equals( Const.ReleaseType.PREVIEW ) ) {
+          version = BaseMessages.getString( PKG, "SplashDialog.PreviewRelease" ) + " - " + version;
+        } else if ( Const.RELEASE.equals( Const.ReleaseType.GA ) ) {
+          version = BaseMessages.getString( PKG, "SplashDialog.GA" ) + " - " + version;
+        }
+        String buildDate = BaseMessages.getString( PKG, "SplashDialog.BuildDate" ) + " " + outputStringDate;
+        // use the same font/size as the license text
+        e.gc.drawText( version, 290, 235, true );
+        e.gc.drawText( buildDate, 290, 250, true );
       }
     } );
 
@@ -199,6 +245,14 @@ public class Splash {
         timer.cancel();
       }
     } );
+  }
+
+  // load image from svg
+  private Image loadAsResource( Display display, String location ) {
+    SwtUniversalImage img = SwtSvgImageUtil.getImageAsResource( display, location );
+    Image image = new Image( display, img.getAsBitmap( display ), SWT.IMAGE_COPY );
+    img.dispose();
+    return image;
   }
 
   // determine if the license text will fit the allocated space

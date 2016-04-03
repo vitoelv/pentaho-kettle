@@ -1,58 +1,52 @@
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul" align="stretch">
   <toolbar id="nav-toolbar" mode="icons">
-    <toolbarbutton id="trans-run" label="${Spoon.Menu.Transformation.Run}" image="images/run.png"
-      tooltiptext="${Spoon.Tooltip.RunTranformation}" onclick="transgraph.runTransformation()" />
-    <toolbarbutton id="trans-pause" label="${Spoon.Menu.Transformation.Pause}" image="images/pause.png"
+    <toolbarbutton id="trans-pause" label="${Spoon.Menu.Transformation.Pause}" image="images/pause.svg"
       tooltiptext="${Spoon.Tooltip.PauseTranformation}" onclick="transgraph.pauseTransformation()" />
-    <toolbarbutton id="trans-stop" label="${Spoon.Menu.Transformation.Stop}" image="images/stop.png"
+    <toolbarbutton id="trans-stop" label="${Spoon.Menu.Transformation.Stop}" image="images/stop.svg"
       tooltiptext="${Spoon.Tooltip.StopTranformation}" onclick="transgraph.stopTransformation()" />
-    <toolbarbutton id="trans-preview" label="${Spoon.Menu.Transformation.Preview}" image="images/preview.png"
+    <toolbarbutton id="trans-preview" label="${Spoon.Menu.Transformation.Preview}" image="images/preview.svg"
       tooltiptext="${Spoon.Tooltip.PreviewTranformation}" onclick="transgraph.previewFile()" />
-    <toolbarbutton id="trans-debug" label="${Spoon.Menu.Transformation.Debug}" image="images/debug.png"
+    <toolbarbutton id="trans-debug" label="${Spoon.Menu.Transformation.Debug}" image="images/debug.svg"
       tooltiptext="${Spoon.Tooltip.DebugTranformation}" onclick="transgraph.debugFile()" />
-    <toolbarbutton id="trans-replay" label="${Spoon.Menu.Transformation.Replay}" image="images/replay.png"
+    <toolbarbutton id="trans-replay" label="${Spoon.Menu.Transformation.Replay}" image="images/replay.svg"
       tooltiptext="${Spoon.Tooltip.ReplayTranformation}" onclick="transgraph.transReplay()" />
     <toolbarseparator />
-    <toolbarbutton id="trans-verify" label="${Spoon.Menu.Transformation.Verify}" image="images/check.png"
+    <toolbarbutton id="trans-verify" label="${Spoon.Menu.Transformation.Verify}" image="images/check.svg"
       tooltiptext="${Spoon.Tooltip.VerifyTranformation}" onclick="transgraph.checkTrans()" />
-    <toolbarbutton id="trans-impact" label="${Spoon.Menu.Transformation.Impact}" image="images/impact.png"
+    <toolbarbutton id="trans-impact" label="${Spoon.Menu.Transformation.Impact}" image="images/impact.svg"
       tooltiptext="${Spoon.Tooltip.AnalyzeTranformation}" onclick="transgraph.analyseImpact()" />
-    <toolbarbutton id="trans-get-sql" label="${Spoon.Menu.Transformation.GetSQL}" image="images/SQLbutton.png"
+    <toolbarbutton id="trans-get-sql" label="${Spoon.Menu.Transformation.GetSQL}" image="images/SQLbutton.svg"
       tooltiptext="${Spoon.Tooltip.GenerateSQLForTranformation}" onclick="transgraph.getSQL()" />
-    <toolbarbutton id="explore-database" label="${Spoon.Menu.ExploreConnection}" image="images/exploredb.png"
+    <toolbarbutton id="explore-database" label="${Spoon.Menu.ExploreConnection}" image="images/exploredb.svg"
       tooltiptext="${Spoon.Tooltip.ExploreConnection}" onclick="transgraph.exploreDatabase()" />
     <toolbarseparator />
-    <toolbarbutton id="trans-show-results" label="${Spoon.Menu.ShowExecutionResults}" image="images/show-results.png"
+    <toolbarbutton id="trans-show-results" label="${Spoon.Menu.ShowExecutionResults}" image="images/show-results.svg"
       tooltiptext="${Spoon.Tooltip.ShowExecutionResults}" onclick="transgraph.showExecutionResults()" />
     <toolbarseparator />
     <!--
-      <toolbarbutton id="trans-zoom" label="${Spoon.Menu.ZoomTransformation}" image="images/zoom.png"
+      <toolbarbutton id="trans-zoom" label="${Spoon.Menu.ZoomTransformation}" image="images/zoom.svg"
       tooltiptext="${Spoon.Tooltip.ZoomTransformation}"/> <toolbarbutton id="trans-show-grid"
-      label="${Spoon.Menu.ShowTransGrid}" image="images/show-grid.png" tooltiptext="${Spoon.Tooltip.ShowGridView}"/>
-      <toolbarbutton id="trans-show-log" label="${Spoon.Menu.ShowTransLog}" image="images/show-log.png"
+      label="${Spoon.Menu.ShowTransGrid}" image="images/show-grid.svg" tooltiptext="${Spoon.Tooltip.ShowGridView}"/>
+      <toolbarbutton id="trans-show-log" label="${Spoon.Menu.ShowTransLog}" image="images/show-log.svg"
       tooltiptext="${Spoon.Tooltip.ShowLogView}"/> <toolbarbutton id="trans-show-history"
-      label="${Spoon.Menu.ShowTransHistory}" image="images/show-history.png"
+      label="${Spoon.Menu.ShowTransHistory}" image="images/show-history.svg"
       tooltiptext="${Spoon.Tooltip.ShowHistoryView}"/> <toolbarbutton id="trans-show-perf"
-      label="${Spoon.Menu.ShowTransPerf}" image="images/show-perf.png" tooltiptext="${Spoon.Tooltip.ShowPerfView}"/>
+      label="${Spoon.Menu.ShowTransPerf}" image="images/show-perf.svg" tooltiptext="${Spoon.Tooltip.ShowPerfView}"/>
     -->
   </toolbar>
 
   <menupopup id="trans-graph-entry">
     <menuitem id="trans-graph-entry-newhop" label="${TransGraph.PopupMenu.NewHop}" command="transgraph.newHopChoice()" />
-    
-    <menu id="trans-graph-entry-launch" label="${TransGraph.PopupMenu.OpenReferencedObject}">
-      <menupopup id="trans-graph-entry-launch-popup">
-      
-       <menuitem id="trans-graph-entry-launch-popup-nothing" label="${TransGraph.PopupMenu.Launch.Nothing}" command="transgraph.openMapping()" />
-      
-	  </menupopup>
-	</menu>
-    
     <menuitem id="trans-graph-entry-edit" label="${TransGraph.PopupMenu.EditStep}" command="transgraph.editStep()" />
     <menuitem id="trans-graph-entry-edit-description" label="${TransGraph.PopupMenu.EditStepDescription}"
       command="transgraph.editDescription()" />
+    <menu id="trans-graph-entry-launch" label="${TransGraph.PopupMenu.OpenReferencedObject}">
+      <menupopup id="trans-graph-entry-launch-popup">
+        <menuitem id="trans-graph-entry-launch-popup-nothing" label="${TransGraph.PopupMenu.Launch.Nothing}" command="transgraph.openMapping()" />
+	  </menupopup>
+	</menu>
+      
     <menuseparator />
-    
     
     <menu id="trans-graph-entry-data-movement" label="${TransGraph.PopupMenu.DataMovement}">
       <menupopup id="trans-graph-entry-data-movement-popup">
@@ -91,7 +85,14 @@
         <menuitem id="trans-graph-entry-sniff-error" label="${TransGraph.PopupMenu.SniffError}" command="transgraph.sniffError()" /> 
       </menupopup>
     </menu>
-    
+
+    <menuseparator />
+    <menuitem id="trans-graph-entry-verify" label="${TransGraph.PopupMenu.CheckSelectedSteps}" command="transgraph.checkSelectedSteps()" />
+
+    <menuseparator />
+    <menuitem id="trans-graph-entry-errors" label="${TransGraph.PopupMenu.Error}" command="transgraph.errorHandling()" />
+    <menuitem id="trans-graph-entry-preview" label="${TransGraph.PopupMenu.Preview}" command="transgraph.preview()" />
+
     <menuseparator />
     <menu id="trans-graph-entry-align" label="${TransGraph.PopupMenu.AllignDistribute}">
       <menupopup id="trans-graph-entry-align-popup">
@@ -114,20 +115,16 @@
       </menupopup>
     </menu>
     <menuseparator />
-    <menuitem id="trans-graph-entry-verify" label="${TransGraph.PopupMenu.CheckSelectedSteps}" command="transgraph.checkSelectedSteps()" />
     <menuitem id="trans-graph-entry-mapping" label="${TransGraph.PopupMenu.GenerateMappingToThisStep}" command="transgraph.generateMappingToThisStep()" />
     <menuitem id="trans-graph-entry-partitioning" label="${TransGraph.PopupMenu.Partitioning}" command="transgraph.partitioning()" />
     <menuitem id="trans-graph-entry-clustering" label="${TransGraph.PopupMenu.Clustering}" command="transgraph.clustering()" />
-    <menuitem id="trans-graph-entry-errors" label="${TransGraph.PopupMenu.Error}" command="transgraph.errorHandling()" />
-    <menuseparator />
-    <menuitem id="trans-graph-entry-preview" label="${TransGraph.PopupMenu.Preview}" command="transgraph.preview()" />
   </menupopup>
 
   <menupopup id="trans-graph-hop">
     <menuitem id="trans-graph-hop-edit" label="${TransGraph.PopupMenu.EditHop}" command="transgraph.editHop()" />
-    <menuitem id="trans-graph-hop-flip" label="${TransGraph.PopupMenu.FlipDirection}" command="transgraph.flipHopDirection()" />
     <menuitem id="trans-graph-hop-enabled" label="${TransGraph.PopupMenu.DisableHop}" command="transgraph.enableHop() " />
     <menuitem id="trans-graph-hop-delete" acceltext="del" accesskey="del" label="${TransGraph.PopupMenu.DeleteHop}" command="transgraph.deleteHop()" />
+    <menuitem id="trans-graph-hop-flip" label="${TransGraph.PopupMenu.FlipDirection}" command="transgraph.flipHopDirection()" />
     <menu id="trans-graph-graph-hop-bulk" label="${TransGraph.PopupMenu.BulkHop}">
       <menupopup id="trans-graph-entry-hop-bulk">
         <menuitem id="trans-graph-entry-hop-enable-selected" label="${TransGraph.PopupMenu.HopEnableSelected}" command="transgraph.enableHopsBetweenSelectedSteps()" />

@@ -24,11 +24,12 @@ package org.pentaho.di.job.entries.sftp;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetAddress;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileType;
-import org.apache.commons.vfs.FileUtil;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileType;
+import org.apache.commons.vfs2.FileUtil;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.exception.KettleFileException;
 import org.pentaho.di.core.exception.KettleJobException;
@@ -212,6 +213,27 @@ public class SFTPClient {
     return fileList;
   }
 
+  public void get( FileObject localFile, String remoteFile ) throws KettleJobException {
+    OutputStream localStream = null;
+    try {
+      localStream = KettleVFS.getOutputStream( localFile, false );
+      c.get( remoteFile, localStream );
+    } catch ( SftpException e ) {
+      throw new KettleJobException( e );
+    } catch ( IOException e ) {
+      throw new KettleJobException( e );
+    } finally {
+      if ( localStream != null ) {
+        try {
+          localStream.close();
+        } catch ( IOException ignore ) {
+          // Ignore any IOException, as we're trying to close the stream anyways
+        }
+      }
+    }
+  }
+
+  @Deprecated
   public void get( String localFilePath, String remoteFile ) throws KettleJobException {
     int mode = ChannelSftp.OVERWRITE;
     try {
@@ -359,8 +381,12 @@ public class SFTPClient {
   }
 
   public void disconnect() {
-    c.disconnect();
-    s.disconnect();
+    if ( c != null ) {
+      c.disconnect();
+    }
+    if ( s != null ) {
+      s.disconnect();
+    }
   }
 
   public String GetPrivateKeyFileName() {

@@ -31,7 +31,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.Result;
 import org.pentaho.di.core.ResultFile;
@@ -72,6 +72,8 @@ import org.pentaho.di.trans.step.errorhandling.FileErrorHandlerMissingFiles;
  *
  * @author Matt
  * @since 4-apr-2003
+ * 
+ * @deprecated replaced by implementation in the ...steps.fileinput.text package
  */
 public class TextFileInput extends BaseStep implements StepInterface {
   private static Class<?> PKG = TextFileInputMeta.class; // for i18n purposes, needed by Translator2!!
@@ -626,7 +628,7 @@ public class TextFileInput extends BaseStep implements StepInterface {
         addRootUri, shortFilename, path, hidden, modificationDateTime, uri, rooturi, extension, size );
   }
 
-  public static final Object[] convertLineToRow( LogChannelInterface log, TextFileLine textFileLine,
+  public static Object[] convertLineToRow( LogChannelInterface log, TextFileLine textFileLine,
       InputFileMetaInterface info, Object[] passThruFields, int nrPassThruFields, RowMetaInterface outputRowMeta,
       RowMetaInterface convertRowMeta, String fname, long rowNr, String delimiter, String enclosure,
       String escapeCharacter, FileErrorHandler errorHandler, boolean addShortFilename, boolean addExtension,
@@ -673,8 +675,11 @@ public class TextFileInput extends BaseStep implements StepInterface {
         int trim_type = fieldnr < nrfields ? f.getTrimType() : ValueMetaInterface.TRIM_TYPE_NONE;
 
         if ( fieldnr < strings.length ) {
-          String pol = strings[fieldnr];
+          String pol = strings[ fieldnr ];
           try {
+            if ( valueMeta.isNull( pol ) ) {
+              pol = null;
+            }
             value = valueMeta.convertDataFromString( pol, convertMeta, nullif, ifnull, trim_type );
           } catch ( Exception e ) {
             // OK, give some feedback!
@@ -925,22 +930,8 @@ public class TextFileInput extends BaseStep implements StepInterface {
 
         // Read a number of lines...
         for ( int i = 0; i < repeats && !data.doneReading; i++ ) {
-          String line = getLine( log, data.isr, data.encodingType, data.fileFormatType, data.lineStringBuilder );
-          if ( line != null ) {
-            // Filter row?
-            boolean isFilterLastLine = false;
-            boolean filterOK = checkFilterRow( line, isFilterLastLine );
-            if ( filterOK ) {
-              // logRowlevel("LINE READ: "+line);
-              data.lineBuffer.add( new TextFileLine( line, lineNumberInFile, data.file ) );
-            } else {
-              if ( isFilterLastLine ) {
-                data.doneReading = true;
-              }
-              repeats++; // grab another line, this one got filtered
-            }
-          } else {
-            data.doneReading = true;
+          if ( !tryToReadLine( true ) ) {
+            repeats++;
           }
         }
       }
@@ -950,8 +941,8 @@ public class TextFileInput extends BaseStep implements StepInterface {
      * If the buffer is empty: open the next file. (if nothing in there, open the next, etc.)
      */
     while ( data.lineBuffer.size() == 0 ) {
-      if ( !openNextFile() ) // Open fails: done processing unless set to skip bad files
-      {
+      if ( !openNextFile() ) {
+        // Open fails: done processing unless set to skip bad files
         if ( failAfterBadFile( null ) ) {
           closeLastFile();
           setOutputDone(); // signal end to receiver(s)
@@ -973,8 +964,8 @@ public class TextFileInput extends BaseStep implements StepInterface {
       /*
        * Different rules apply: on each page: a header a number of data lines a footer
        */
-      if ( !data.doneWithHeader && data.pageLinesRead == 0 ) // We are reading header lines
-      {
+      if ( !data.doneWithHeader && data.pageLinesRead == 0 ) {
+        // We are reading header lines
         if ( log.isRowLevel() ) {
           logRowlevel( "P-HEADER (" + data.headerLinesRead + ") : " + textLine.line );
         }
@@ -1082,6 +1073,11 @@ public class TextFileInput extends BaseStep implements StepInterface {
               if ( data.lineBuffer.size() > 0 ) {
                 extra = data.lineBuffer.get( 0 ).line;
                 data.lineBuffer.remove( 0 );
+              } else {
+                tryToReadLine( true );
+                if ( !data.lineBuffer.isEmpty() ) {
+                  extra = data.lineBuffer.remove( 0 ).line;
+                }
               }
               textLine.line += extra;
             }
@@ -1431,7 +1427,10 @@ public class TextFileInput extends BaseStep implements StepInterface {
        */
       int bufferSize = 1;
       bufferSize += meta.hasHeader() ? meta.getNrHeaderLines() : 0;
-      bufferSize += meta.isLayoutPaged() ? meta.getNrLinesPerPage() * ( Math.max( 0, meta.getNrWraps() ) + 1 ) : 0;
+      bufferSize += meta.isLayoutPaged()
+        ? meta.getNrLinesPerPage() * ( Math.max( 0, meta.getNrWraps() ) + 1 )
+        : Math.max( 0, meta.getNrWraps() ); // it helps when we have wrapped input w/o header
+
       bufferSize += meta.hasFooter() ? meta.getNrFooterLines() : 0;
 
       // See if we need to skip the document header lines...
@@ -1445,30 +1444,11 @@ public class TextFileInput extends BaseStep implements StepInterface {
         }
       }
 
-      String line;
       for ( int i = 0; i < bufferSize && !data.doneReading; i++ ) {
-        line = getLine( log, data.isr, data.encodingType, data.fileFormatType, data.lineStringBuilder );
-        if ( line != null ) {
-          // when there is no header, check the filter for the first line
-          if ( !meta.hasHeader() || i >= meta.getNrHeaderLines() ) {
-            // Filter row?
-            boolean isFilterLastLine = false;
-            boolean filterOK = checkFilterRow( line, isFilterLastLine );
-            if ( filterOK ) {
-              data.lineBuffer.add( new TextFileLine( line, lineNumberInFile, data.file ) ); // Store it in the
-              // line buffer...
-            } else {
-              bufferSize++; // grab another line, this one got filtered
-            }
-          } else { // there is a header, so don't checkFilterRow
-
-            if ( !meta.noEmptyLines() || line.length() != 0 ) {
-              data.lineBuffer.add( new TextFileLine( line, lineNumberInFile, data.file ) ); // Store it in the line
-                                                                                            // buffer...
-            }
-          }
-        } else {
-          data.doneReading = true;
+        boolean wasNotFiltered = tryToReadLine( !meta.hasHeader() || i >= meta.getNrHeaderLines() );
+        if ( !wasNotFiltered ) {
+          // grab another line, this one got filtered
+          bufferSize++;
         }
       }
 
@@ -1488,6 +1468,34 @@ public class TextFileInput extends BaseStep implements StepInterface {
       }
       setErrors( getErrors() + 1 );
       return false;
+    }
+    return true;
+  }
+
+  private boolean tryToReadLine( boolean applyFilter ) throws KettleFileException {
+    String line;
+    line = getLine( log, data.isr, data.encodingType, data.fileFormatType, data.lineStringBuilder );
+    if ( line != null ) {
+      // when there is no header, check the filter for the first line
+      if ( applyFilter ) {
+        // Filter row?
+        boolean isFilterLastLine = false;
+        boolean filterOK = checkFilterRow( line, isFilterLastLine );
+        if ( filterOK ) {
+          data.lineBuffer.add( new TextFileLine( line, lineNumberInFile, data.file ) ); // Store it in the
+          // line buffer...
+        } else {
+          return false;
+        }
+      } else { // don't checkFilterRow
+
+        if ( !meta.noEmptyLines() || line.length() != 0 ) {
+          data.lineBuffer.add( new TextFileLine( line, lineNumberInFile, data.file ) ); // Store it in the line
+                                                                                        // buffer...
+        }
+      }
+    } else {
+      data.doneReading = true;
     }
     return true;
   }

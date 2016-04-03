@@ -22,73 +22,131 @@
 
 package org.pentaho.di.cluster;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.StringWriter;
-import java.io.UnsupportedEncodingException;
-import java.nio.charset.Charset;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
-
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.httpclient.Credentials;
+import org.apache.commons.httpclient.Header;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpMethod;
 import org.apache.commons.httpclient.UsernamePasswordCredentials;
 import org.apache.commons.httpclient.auth.AuthScope;
 import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.commons.httpclient.methods.PostMethod;
 import org.apache.commons.lang.StringUtils;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.encryption.Encr;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.variables.VariableSpace;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.StringWriter;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.Charset;
+import java.util.Map;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
+
 public class HttpUtil {
 
   public static final int ZIP_BUFFER_SIZE = 8192;
+  private static final String PROTOCOL_UNSECURE = "http";
+  private static final String PROTOCOL_SECURE = "https";
 
-  public static String execService( VariableSpace space, String hostname, String port, String webAppName,
-    String serviceAndArguments, String username, String password, String proxyHostname, String proxyPort,
-    String nonProxyHosts ) throws Exception {
-    // Prepare HTTP get
-    //
+  private static HttpClient getClient( VariableSpace space, String hostname, String port, String webAppName,
+      String username, String password, String proxyHostname, String proxyPort, String nonProxyHosts ) {
+
     HttpClient client = SlaveConnectionManager.getInstance().createHttpClient();
     addCredentials( client, space, hostname, port, webAppName, username, password );
     addProxy( client, space, hostname, proxyHostname, proxyPort, nonProxyHosts );
-    String urlString = constructUrl( space, hostname, port, webAppName, serviceAndArguments );
+
+    return client;
+  }
+
+  public static PostMethod execService( VariableSpace space, String hostname, String port, String webAppName,
+      String urlString, String username, String password, String proxyHostname, String proxyPort,
+      String nonProxyHosts, Iterable<Header> headers, Map<String, Object> parameters, Map<String, String> arguments )
+      throws Exception {
+
+    HttpClient
+        client =
+        getClient( space, hostname, port, webAppName, username, password, proxyHostname, proxyPort, nonProxyHosts );
+
+    client.getHttpConnectionManager().getParams().setConnectionTimeout( 0 );
+    client.getHttpConnectionManager().getParams().setSoTimeout( 0 );
+
+    PostMethod method = new PostMethod( urlString );
+
+    method.setDoAuthentication( true );
+
+    for ( Header header : headers ) {
+      method.addRequestHeader( header );
+    }
+
+    for ( Map.Entry<String, Object> parameter : parameters.entrySet() ) {
+      method.getParams().setParameter( parameter.getKey(), parameter.getValue() );
+    }
+
+    for ( Map.Entry<String, String> arg : arguments.entrySet() ) {
+      method.addParameter( arg.getKey(), arg.getValue() );
+    }
+
+    execMethod( client, method );
+    return method;
+  }
+
+  public static String execService( VariableSpace space, String hostname, String port, String webAppName,
+      String serviceAndArguments, String username, String password, String proxyHostname, String proxyPort,
+      String nonProxyHosts, boolean isSecure ) throws Exception {
+
+    HttpClient
+        client =
+        getClient( space, hostname, port, webAppName, username, password, proxyHostname, proxyPort, nonProxyHosts );
+
+    String urlString = constructUrl( space, hostname, port, webAppName, serviceAndArguments, isSecure );
     HttpMethod method = new GetMethod( urlString );
 
-    // Execute request
-    //
-    InputStream inputStream = null;
-    BufferedInputStream bufferedInputStream = null;
-
     try {
-      int result = client.executeMethod( method );
-      if ( result != 200 ) {
-        throw new KettleException( "Response code " + result + " received while querying " + urlString );
-      }
-
-      // the response
-      String body = method.getResponseBodyAsString();
-
-      return body;
+      execMethod( client, method );
+      return method.getResponseBodyAsString();
     } finally {
-      if ( bufferedInputStream != null ) {
-        bufferedInputStream.close();
-      }
-      if ( inputStream != null ) {
-        inputStream.close();
-      }
-
-      // Release current connection to the connection pool once you are done
       method.releaseConnection();
     }
 
+  }
+
+  public static String execService( VariableSpace space, String hostname, String port, String webAppName,
+      String serviceAndArguments, String username, String password, String proxyHostname, String proxyPort,
+      String nonProxyHosts ) throws Exception {
+    return execService( space, hostname, port, webAppName, serviceAndArguments, username, password, proxyHostname,
+        proxyPort, nonProxyHosts, false );
+  }
+
+  public static int execMethod( HttpClient client, HttpMethod method ) throws Exception {
+    int result;
+    try {
+      result = client.executeMethod( method );
+    } catch ( Exception e ) {
+      throw new KettleException(
+          "You don't seem to be getting a connection to the server. Check the host and port you're using and make sure the sever is up and running." );
+    }
+
+    if ( result == 500 ) {
+      throw new KettleException( "There was an error reading data from the server." );
+    }
+
+    if ( result == 401 ) {
+      throw new KettleException(
+          "Nice try-but we couldn't log you in. Check your username and password and try again." );
+    }
+
+    if ( result != 200 ) {
+      throw new KettleException( method.getResponseBodyAsString() );
+    }
+
+    return result;
   }
 
   /**
@@ -104,11 +162,17 @@ public class HttpUtil {
    */
   public static String constructUrl( VariableSpace space, String hostname, String port, String webAppName,
     String serviceAndArguments ) throws UnsupportedEncodingException {
+    return constructUrl( space, hostname, port, webAppName, serviceAndArguments, false );
+  }
+
+  public static String constructUrl( VariableSpace space, String hostname, String port, String webAppName,
+      String serviceAndArguments, boolean isSecure ) throws UnsupportedEncodingException {
     String realHostname = space.environmentSubstitute( hostname );
     if ( !StringUtils.isEmpty( webAppName ) ) {
       serviceAndArguments = "/" + space.environmentSubstitute( webAppName ) + serviceAndArguments;
     }
-    String retval = "http://" + realHostname + getPortSpecification( space, port ) + serviceAndArguments;
+    String protocol = isSecure ? PROTOCOL_SECURE : PROTOCOL_UNSECURE;
+    String retval = protocol + "://" + realHostname + getPortSpecification( space, port ) + serviceAndArguments;
     retval = Const.replace( retval, " ", "%20" );
     return retval;
   }

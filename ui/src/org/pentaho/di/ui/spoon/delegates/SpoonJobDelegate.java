@@ -202,8 +202,12 @@ public class SpoonJobDelegate extends SpoonDelegate {
       Object[] paramArgs = new Object[] { spoon.getShell(), jobEntryInterface, spoon.getRepository(), jobMeta };
       Constructor<?> dialogConstructor;
 
-      PluginInterface plugin = registry.getPlugin( JobEntryPluginType.class, jobEntryInterface );
-      dialogClass = PluginRegistry.getInstance().getClass( plugin, dialogClassName );
+      try {
+        PluginInterface plugin = registry.getPlugin( JobEntryPluginType.class, jobEntryInterface );
+        dialogClass = PluginRegistry.getInstance().getClass( plugin, dialogClassName );
+      } catch ( Exception e ) {
+        dialogClass = Class.forName( dialogClassName, true, jobEntryInterface.getClass().getClassLoader() );
+      }
       dialogConstructor = dialogClass.getConstructor( paramClasses );
       JobEntryDialogInterface entryDialogInterface =
         (JobEntryDialogInterface) dialogConstructor.newInstance( paramArgs );
@@ -281,43 +285,62 @@ public class SpoonJobDelegate extends SpoonDelegate {
     }
   }
 
-  public void deleteJobEntryCopies( JobMeta jobMeta, JobEntryCopy jobEntry ) {
-    String name = jobEntry.getName();
-    // TODO Show warning "Are you sure? This operation can't be undone." +
-    // clear undo buffer.
+  public void deleteJobEntryCopies( JobMeta job, JobEntryCopy[] jobEntries ) {
 
-    // First delete all the hops using entry with name:
-    JobHopMeta[] hi = jobMeta.getAllJobHopsUsing( name );
-    if ( hi.length > 0 ) {
-      int[] hix = new int[hi.length];
-      for ( int i = 0; i < hi.length; i++ ) {
-        hix[i] = jobMeta.indexOfJobHop( hi[i] );
+    // Hops belonging to the deleting jobEntries are placed in a single transaction and removed.
+    List<JobHopMeta> jobHops = new ArrayList<JobHopMeta>();
+    int[] hopIndexes = new int[job.nrJobHops()];
+    int hopIndex = 0;
+    main: for ( int i = job.nrJobHops() - 1; i >= 0; i-- ) {
+      JobHopMeta hi = job.getJobHop( i );
+      for ( int j = 0; j < jobEntries.length; j++ ) {
+        if ( hi.getFromEntry().equals( jobEntries[j] ) || hi.getToEntry().equals( jobEntries[j] ) ) {
+          int idx = job.indexOfJobHop( hi );
+          jobHops.add( (JobHopMeta) hi.clone() );
+          hopIndexes[hopIndex] = idx;
+          job.removeJobHop( idx );
+          spoon.refreshTree();
+          continue main;
+        }
       }
-
-      spoon.addUndoDelete( jobMeta, hi, hix );
-      for ( int i = hix.length - 1; i >= 0; i-- ) {
-        jobMeta.removeJobHop( hix[i] );
-      }
+      hopIndex++;
+    }
+    if ( !jobHops.isEmpty() ) {
+      JobHopMeta[] hops = jobHops.toArray( new JobHopMeta[jobHops.size()] );
+      spoon.addUndoDelete( job, hops, hopIndexes );
     }
 
-    // Then delete all the entries with name:
-    JobEntryCopy[] je = jobMeta.getAllJobGraphEntries( name );
-    int[] jex = new int[je.length];
-    for ( int i = 0; i < je.length; i++ ) {
-      jex[i] = jobMeta.indexOfJobEntry( je[i] );
+    // Deleting jobEntries are placed all in a single transaction and removed.
+    int[] positions = new int[jobEntries.length];
+    for ( int i = 0; i < jobEntries.length; i++ ) {
+      int pos = job.indexOfJobEntry( jobEntries[i] );
+      job.removeJobEntry( pos );
+      positions[i] = pos;
     }
+    spoon.addUndoDelete( job, jobEntries, positions );
 
-    if ( je.length > 0 ) {
-      spoon.addUndoDelete( jobMeta, je, jex );
-    }
-    for ( int i = jex.length - 1; i >= 0; i-- ) {
-      jobMeta.removeJobEntry( jex[i] );
-    }
-
-    jobMeta.clearUndo();
-    spoon.setUndoMenu( jobMeta );
-    spoon.refreshGraph();
     spoon.refreshTree();
+    spoon.refreshGraph();
+  }
+
+  public void deleteJobEntryCopies( JobMeta jobMeta, JobEntryCopy jobEntry ) {
+
+    for ( int i = jobMeta.nrJobHops() - 1; i >= 0; i-- ) {
+      JobHopMeta hi = jobMeta.getJobHop( i );
+      if ( hi.getFromEntry().equals( jobEntry ) || hi.getToEntry().equals( jobEntry ) ) {
+        int idx = jobMeta.indexOfJobHop( hi );
+        spoon.addUndoDelete( jobMeta, new JobHopMeta[] { (JobHopMeta) hi.clone() }, new int[] { idx } );
+        jobMeta.removeJobHop( idx );
+        spoon.refreshTree();
+      }
+    }
+
+    int pos = jobMeta.indexOfJobEntry( jobEntry );
+    jobMeta.removeJobEntry( pos );
+    spoon.addUndoDelete( jobMeta, new JobEntryCopy[] { jobEntry }, new int[] { pos } );
+
+    spoon.refreshTree();
+    spoon.refreshGraph();
   }
 
   public void dupeJobEntry( JobMeta jobMeta, JobEntryCopy jobEntry ) {
@@ -1186,7 +1209,7 @@ public class SpoonJobDelegate extends SpoonDelegate {
       //
 
       // We delete an entry : undo this...
-      case TransAction.TYPE_ACTION_DELETE_STEP:
+      case TransAction.TYPE_ACTION_DELETE_JOB_ENTRY:
         // un-Delete the entry at correct location: re-insert
         JobEntryCopy[] ce = (JobEntryCopy[]) transAction.getCurrent();
         idx = transAction.getCurrentIndex();
@@ -1325,7 +1348,7 @@ public class SpoonJobDelegate extends SpoonDelegate {
 
     JobExecutionConfigurationDialog dialog =
       new JobExecutionConfigurationDialog( spoon.getShell(), executionConfiguration, jobMeta );
-    if ( dialog.open() ) {
+    if ( jobMeta.isShowJobDialog() && dialog.open() ) {
 
       ExtensionPointHandler.callExtensionPoint( log, KettleExtensionPoint.SpoonJobMetaExecutionStart.id, jobMeta );
       ExtensionPointHandler.callExtensionPoint(

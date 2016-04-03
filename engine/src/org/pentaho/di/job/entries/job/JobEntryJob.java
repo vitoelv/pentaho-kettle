@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -34,7 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -52,6 +52,7 @@ import org.pentaho.di.core.logging.LogLevel;
 import org.pentaho.di.core.parameters.DuplicateParamException;
 import org.pentaho.di.core.parameters.NamedParams;
 import org.pentaho.di.core.parameters.NamedParamsDefault;
+import org.pentaho.di.core.util.CurrentDirectoryResolver;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.variables.Variables;
 import org.pentaho.di.core.vfs.KettleVFS;
@@ -125,8 +126,6 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
   public boolean passingAllParameters = true;
 
   private boolean passingExport;
-
-  private boolean forcingSeparateLogging;
 
   public static final LogLevel DEFAULT_LOG_LEVEL = LogLevel.NOTHING;
 
@@ -262,7 +261,6 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
     retval.append( "      " ).append( XMLHandler.addTagValue( "expand_remote_job", expandingRemoteJob ) );
     retval.append( "      " ).append( XMLHandler.addTagValue( "create_parent_folder", createParentFolder ) );
     retval.append( "      " ).append( XMLHandler.addTagValue( "pass_export", passingExport ) );
-    retval.append( "      " ).append( XMLHandler.addTagValue( "force_separate_logging", forcingSeparateLogging ) );
 
     if ( arguments != null ) {
       for ( int i = 0; i < arguments.length; i++ ) {
@@ -347,8 +345,6 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
       passingExport = "Y".equalsIgnoreCase( XMLHandler.getTagValue( entrynode, "pass_export" ) );
       directory = XMLHandler.getTagValue( entrynode, "directory" );
       createParentFolder = "Y".equalsIgnoreCase( XMLHandler.getTagValue( entrynode, "create_parent_folder" ) );
-      forcingSeparateLogging =
-        "Y".equalsIgnoreCase( XMLHandler.getTagValue( entrynode, "force_separate_logging" ) );
 
       String wait = XMLHandler.getTagValue( entrynode, "wait_until_finished" );
       if ( Const.isEmpty( wait ) ) {
@@ -430,7 +426,6 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
       followingAbortRemotely = rep.getJobEntryAttributeBoolean( id_jobentry, "follow_abort_remote" );
       expandingRemoteJob = rep.getJobEntryAttributeBoolean( id_jobentry, "expand_remote_job" );
       createParentFolder = rep.getJobEntryAttributeBoolean( id_jobentry, "create_parent_folder" );
-      forcingSeparateLogging = rep.getJobEntryAttributeBoolean( id_jobentry, "force_separate_logging" );
 
       // How many arguments?
       int argnr = rep.countNrJobEntryAttributes( id_jobentry, "argument" );
@@ -490,7 +485,6 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
       rep.saveJobEntryAttribute( id_job, getObjectId(), "follow_abort_remote", followingAbortRemotely );
       rep.saveJobEntryAttribute( id_job, getObjectId(), "expand_remote_job", expandingRemoteJob );
       rep.saveJobEntryAttribute( id_job, getObjectId(), "create_parent_folder", createParentFolder );
-      rep.saveJobEntryAttribute( id_job, getObjectId(), "force_separate_logging", forcingSeparateLogging );
 
       // save the arguments...
       if ( arguments != null ) {
@@ -797,7 +791,6 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
           // Create a new job
           //
           job = new Job( rep, jobMeta, this );
-          job.setForcingSeparateLogging( forcingSeparateLogging );
           job.setParentJob( parentJob );
           job.setLogLevel( jobLogLevel );
           job.shareVariablesWith( this );
@@ -919,6 +912,9 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
             String value = namedParam.getParameterValue( param );
             jobExecutionConfiguration.getParams().put( param, Const.NVL( value, defValue ) );
           }
+          if ( parentJob.getJobMeta().isBatchIdPassed() ) {
+            jobExecutionConfiguration.setPassedBatchId( parentJob.getBatchId() );
+          }
 
           // Send the XML over to the slave server
           // Also start the job over there...
@@ -995,11 +991,13 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
 
         }
 
-        if ( iteration == 0 ) {
-          result.clear();
-        }
-
+        result.clear(); // clear only the numbers, NOT the files or rows.
         result.add( oneResult );
+
+        // Set the result rows too, if any ...
+        if ( !Const.isEmpty( oneResult.getRows() ) ) {
+          result.setRows( new ArrayList<RowMetaAndData>( oneResult.getRows() ) );
+        }
 
         // if one of them fails (in the loop), increase the number of errors
         //
@@ -1184,38 +1182,76 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
     if ( rep != null ) {
       return getJobMeta( rep, rep.getMetaStore(), space );
     } else {
-      return getJobMeta( rep, null, space );
+      return getJobMeta( rep, getMetaStore(), space );
     }
   }
 
   public JobMeta getJobMeta( Repository rep, IMetaStore metaStore, VariableSpace space ) throws KettleException {
     JobMeta jobMeta = null;
     try {
+      CurrentDirectoryResolver r = new CurrentDirectoryResolver();
+      VariableSpace tmpSpace = r.resolveCurrentDirectory(
+          specificationMethod, space, rep, parentJob, getFilename() );
       switch ( specificationMethod ) {
         case FILENAME:
-          jobMeta =
-            new JobMeta(
-              ( space != null ? space.environmentSubstitute( getFilename() ) : getFilename() ), rep, null );
+          String realFilename = tmpSpace.environmentSubstitute( getFilename() );
+          if ( rep != null ) {
+            // need to try to load from the repository
+            realFilename = r.normalizeSlashes( realFilename );
+            try {
+              String dirStr = realFilename.substring( 0, realFilename.lastIndexOf( "/" ) );
+              String tmpFilename = realFilename.substring( realFilename.lastIndexOf( "/" ) + 1 );
+              RepositoryDirectoryInterface dir = rep.findDirectory( dirStr );
+              jobMeta = rep.loadJob( tmpFilename, dir, null, null );
+            } catch ( KettleException ke ) {
+              // try without extension
+              if ( realFilename.endsWith( Const.STRING_JOB_DEFAULT_EXT ) ) {
+                try {
+                  String tmpFilename = realFilename.substring( realFilename.lastIndexOf( "/" ) + 1,
+                      realFilename.indexOf( "." + Const.STRING_JOB_DEFAULT_EXT ) );
+                  String dirStr = realFilename.substring( 0, realFilename.lastIndexOf( "/" ) );
+                  RepositoryDirectoryInterface dir = rep.findDirectory( dirStr );
+                  jobMeta = rep.loadJob( tmpFilename, dir, null, null );
+                } catch ( KettleException ke2 ) {
+                  // fall back to try loading from file system (mappingJobMeta is going to be null)
+                }
+              }
+            }
+          }
+          if ( jobMeta == null ) {
+            jobMeta = new JobMeta( tmpSpace, realFilename, rep, metaStore, null );
+          }
           break;
         case REPOSITORY_BY_NAME:
+          String realDirectory = tmpSpace.environmentSubstitute( getDirectory() );
+          String realJobName = tmpSpace.environmentSubstitute( getJobName() );
+
           if ( rep != null ) {
-            String realDirectory =
-              ( space != null ? space.environmentSubstitute( getDirectory() ) : getDirectory() );
+            realDirectory = r.normalizeSlashes( realDirectory );
             RepositoryDirectoryInterface repositoryDirectory =
               rep.loadRepositoryDirectoryTree().findDirectory( realDirectory );
             if ( repositoryDirectory == null ) {
               throw new KettleException( "Unable to find repository directory ["
                 + Const.NVL( realDirectory, "" ) + "]" );
             }
-            jobMeta =
-              rep.loadJob(
-                ( space != null ? space.environmentSubstitute( getJobName() ) : getJobName() ),
-                repositoryDirectory, null, null ); // reads
-            break;
+            jobMeta = rep.loadJob( realJobName, repositoryDirectory, null, null ); // reads
           } else {
-            throw new KettleException(
-              "Could not execute job specified in a repository since we're not connected to one" );
+            // rep is null, let's try loading by filename
+            try {
+              jobMeta = new JobMeta( tmpSpace, realDirectory + "/" + realJobName, rep, metaStore, null );
+            } catch ( KettleException ke ) {
+              try {
+                // add .kjb extension and try again
+                jobMeta = new JobMeta( tmpSpace,
+                    realDirectory + "/" + realJobName + "." + Const.STRING_JOB_DEFAULT_EXT, rep, metaStore, null );
+              } catch ( KettleException ke2 ) {
+                ke2.printStackTrace();
+                throw new KettleException(
+                    "Could not execute job specified in a repository since we're not connected to one" );
+              }
+            }
           }
+          break;
         case REPOSITORY_BY_REFERENCE:
           if ( rep != null ) {
             // Load the last version...
@@ -1505,21 +1541,6 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
    */
   public Object loadReferencedObject( int index, Repository rep, IMetaStore metaStore, VariableSpace space ) throws KettleException {
     return getJobMeta( rep, metaStore, space );
-  }
-
-  /**
-   * @return the forcingSeparateLogging
-   */
-  public boolean isForcingSeparateLogging() {
-    return forcingSeparateLogging;
-  }
-
-  /**
-   * @param forcingSeparateLogging
-   *          the forcingSeparateLogging to set
-   */
-  public void setForcingSeparateLogging( boolean forcingSeparateLogging ) {
-    this.forcingSeparateLogging = forcingSeparateLogging;
   }
 
   public boolean isExpandingRemoteJob() {

@@ -31,16 +31,16 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.Comparator;
 
-import org.apache.commons.vfs.FileContent;
-import org.apache.commons.vfs.FileName;
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileSystemException;
-import org.apache.commons.vfs.FileSystemManager;
-import org.apache.commons.vfs.FileSystemOptions;
-import org.apache.commons.vfs.cache.WeakRefFilesCache;
-import org.apache.commons.vfs.impl.DefaultFileSystemManager;
-import org.apache.commons.vfs.impl.StandardFileSystemManager;
-import org.apache.commons.vfs.provider.local.LocalFile;
+import org.apache.commons.vfs2.FileContent;
+import org.apache.commons.vfs2.FileName;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileSystemException;
+import org.apache.commons.vfs2.FileSystemManager;
+import org.apache.commons.vfs2.FileSystemOptions;
+import org.apache.commons.vfs2.cache.WeakRefFilesCache;
+import org.apache.commons.vfs2.impl.DefaultFileSystemManager;
+import org.apache.commons.vfs2.impl.StandardFileSystemManager;
+import org.apache.commons.vfs2.provider.local.LocalFile;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.exception.KettleFileException;
 import org.pentaho.di.core.util.UUIDUtil;
@@ -80,7 +80,11 @@ public class KettleVFS {
       @Override
       public void run() {
         if ( fsm != null ) {
-          fsm.close();
+          try {
+            fsm.close();
+          } catch ( Exception ignored ){
+            // Exceptions can be thrown due to a closed classloader
+          }
         }
       }
     } ) );
@@ -152,19 +156,29 @@ public class KettleVFS {
       return fileObject;
     } catch ( IOException e ) {
       throw new KettleFileException( "Unable to get VFS File object for filename '"
-        + vfsFilename + "' : " + e.getMessage() );
+        + cleanseFilename( vfsFilename ) + "' : " + e.getMessage() );
     }
   }
 
+  /**
+   * Private method for stripping password from filename when a FileObject
+   * can not be obtained.
+   * getFriendlyURI(FileObject) or getFriendlyURI(String) are the public
+   * methods.
+   */
+  private static String cleanseFilename( String vfsFilename ) {
+    return vfsFilename.replaceAll( ":[^:@/]+@", ":<password>@" );
+  }
+
   private static FileSystemOptions buildFsOptions( VariableSpace varSpace, FileSystemOptions sourceOptions,
-    String vfsFilename, String scheme ) throws IOException {
+      String vfsFilename, String scheme ) throws IOException {
     if ( varSpace == null || vfsFilename == null ) {
       // We cannot extract settings from a non-existant variable space
       return null;
     }
 
     IKettleFileSystemConfigBuilder configBuilder =
-      KettleFileSystemConfigBuilderFactory.getConfigBuilder( varSpace, scheme );
+        KettleFileSystemConfigBuilderFactory.getConfigBuilder( varSpace, scheme );
 
     FileSystemOptions fsOptions = ( sourceOptions == null ) ? new FileSystemOptions() : sourceOptions;
 
@@ -266,7 +280,7 @@ public class KettleVFS {
     if ( parent != null ) {
       if ( !parent.exists() ) {
         throw new IOException( BaseMessages.getString(
-          PKG, "KettleVFS.Exception.ParentDirectoryDoesNotExist", getFilename( parent ) ) );
+          PKG, "KettleVFS.Exception.ParentDirectoryDoesNotExist", getFriendlyURI( parent ) ) );
       }
     }
     try {
@@ -304,7 +318,7 @@ public class KettleVFS {
   }
 
   public static OutputStream getOutputStream( String vfsFilename, VariableSpace space,
-    FileSystemOptions fsOptions, boolean append ) throws KettleFileException {
+      FileSystemOptions fsOptions, boolean append ) throws KettleFileException {
     try {
       FileObject fileObject = getFileObject( vfsFilename, space, fsOptions );
       return getOutputStream( fileObject, append );
@@ -334,6 +348,22 @@ public class KettleVFS {
     return fileString;
   }
 
+  public static String getFriendlyURI( String filename ) {
+    String friendlyName;
+    try {
+      friendlyName = getFriendlyURI( KettleVFS.getFileObject( filename ) );
+    } catch ( Exception e ) {
+      // unable to get a friendly name from VFS object.
+      // Cleanse name of pwd before returning
+      friendlyName = cleanseFilename( filename );
+    }
+    return friendlyName;
+  }
+
+  public static String getFriendlyURI( FileObject fileObject ) {
+    return fileObject.getName().getFriendlyURI();
+  }
+
   public static FileObject createTempFile( String prefix, String suffix, String directory ) throws KettleFileException {
     return createTempFile( prefix, suffix, directory, null );
   }
@@ -348,7 +378,7 @@ public class KettleVFS {
         // being
         // duplicated which would cause the sort to fail.
         String filename =
-          new StringBuffer( 50 ).append( directory ).append( '/' ).append( prefix ).append( '_' ).append(
+            new StringBuffer( 50 ).append( directory ).append( '/' ).append( prefix ).append( '_' ).append(
             UUIDUtil.getUUIDAsString() ).append( suffix ).toString();
         fileObject = getFileObject( filename, space );
       } while ( fileObject.exists() );

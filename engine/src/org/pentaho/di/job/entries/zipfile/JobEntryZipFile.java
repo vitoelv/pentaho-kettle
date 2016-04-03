@@ -29,7 +29,6 @@ import static org.pentaho.di.job.entry.validator.JobEntryValidatorUtils.andValid
 import static org.pentaho.di.job.entry.validator.JobEntryValidatorUtils.fileDoesNotExistValidator;
 import static org.pentaho.di.job.entry.validator.JobEntryValidatorUtils.notBlankValidator;
 
-import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -48,11 +47,11 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileSelectInfo;
-import org.apache.commons.vfs.FileSelector;
-import org.apache.commons.vfs.FileSystemException;
-import org.apache.commons.vfs.FileType;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileSelectInfo;
+import org.apache.commons.vfs2.FileSelector;
+import org.apache.commons.vfs2.FileSystemException;
+import org.apache.commons.vfs2.FileType;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -76,6 +75,7 @@ import org.pentaho.di.job.entry.JobEntryInterface;
 import org.pentaho.di.job.entry.validator.ValidatorContext;
 import org.pentaho.di.repository.ObjectId;
 import org.pentaho.di.repository.Repository;
+import org.pentaho.di.workarounds.BufferedOutputStreamWithCloseDetection;
 import org.pentaho.metastore.api.IMetaStore;
 import org.w3c.dom.Node;
 
@@ -304,7 +304,7 @@ public class JobEntryZipFile extends JobEntryBase implements Cloneable, JobEntry
     ZipInputStream zin = null;
     byte[] buffer = null;
     OutputStream dest = null;
-    BufferedOutputStream buff = null;
+    BufferedOutputStreamWithCloseDetection buff = null;
     ZipOutputStream out = null;
     ZipEntry entry = null;
     String localSourceFilename = realSourceDirectoryOrFile;
@@ -486,7 +486,7 @@ public class JobEntryZipFile extends JobEntryBase implements Cloneable, JobEntry
             // Prepare Zip File
             buffer = new byte[18024];
             dest = KettleVFS.getOutputStream( localrealZipfilename, false );
-            buff = new BufferedOutputStream( dest );
+            buff = new BufferedOutputStreamWithCloseDetection( dest );
             out = new ZipOutputStream( buff );
 
             HashSet<String> fileSet = new HashSet<String>();

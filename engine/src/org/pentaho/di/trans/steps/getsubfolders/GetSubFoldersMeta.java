@@ -25,7 +25,7 @@ package org.pentaho.di.trans.steps.getsubfolders;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -189,6 +189,7 @@ public class GetSubFoldersMeta extends BaseStepMeta implements StepMetaInterface
    */
 
   public void setFolderRequired( String[] folderRequiredin ) {
+    this.folderRequired = new String[folderRequiredin.length];
     for ( int i = 0; i < folderRequiredin.length; i++ ) {
       this.folderRequired[i] = getRequiredFoldersCode( folderRequiredin[i] );
     }

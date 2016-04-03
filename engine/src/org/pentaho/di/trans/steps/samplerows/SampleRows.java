@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,6 +22,8 @@
 
 package org.pentaho.di.trans.steps.samplerows;
 
+import com.google.common.collect.ImmutableRangeSet;
+import com.google.common.collect.Range;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.row.RowDataUtil;
@@ -48,7 +50,7 @@ public class SampleRows extends BaseStep implements StepInterface {
   private SampleRowsData data;
 
   public SampleRows( StepMeta stepMeta, StepDataInterface stepDataInterface, int copyNr, TransMeta transMeta,
-    Trans trans ) {
+                     Trans trans ) {
     super( stepMeta, stepDataInterface, copyNr, transMeta, trans );
   }
 
@@ -65,8 +67,6 @@ public class SampleRows extends BaseStep implements StepInterface {
     if ( first ) {
       first = false;
 
-      data.considerRow = true;
-
       String realRange = environmentSubstitute( meta.getLinesRange() );
       data.addlineField = ( !Const.isEmpty( environmentSubstitute( meta.getLineNumberField() ) ) );
 
@@ -79,67 +79,61 @@ public class SampleRows extends BaseStep implements StepInterface {
       }
 
       String[] rangePart = realRange.split( "," );
+      ImmutableRangeSet.Builder<Integer> setBuilder = ImmutableRangeSet.builder();
 
-      for ( int i = 0; i < rangePart.length; i++ ) {
-        if ( rangePart[i].matches( "\\d+" ) ) {
-          String part = rangePart[i];
+      for ( String part : rangePart ) {
+        if ( part.matches( "\\d+" ) ) {
           if ( log.isDebug() ) {
             logDebug( BaseMessages.getString( PKG, "SampleRows.Log.RangeValue", part ) );
           }
           int vpart = Integer.valueOf( part );
-          if ( vpart > data.maxLine ) {
-            data.maxLine = vpart;
-          }
-          data.range.add( vpart );
+          setBuilder.add( Range.singleton( vpart ) );
 
-        } else if ( rangePart[i].matches( "\\d+\\.\\.\\d+" ) ) {
-          String[] rangeMultiPart = rangePart[i].split( "\\.\\." );
-          for ( int j = Integer.valueOf( rangeMultiPart[0] ).intValue(); j < Integer
-            .valueOf( rangeMultiPart[1] ).intValue() + 1; j++ ) {
-            if ( log.isDebug() ) {
-              logDebug( BaseMessages.getString( PKG, "SampleRows.Log.RangeValue", "" + j ) );
-            }
-            int vpart = Integer.valueOf( j );
-            if ( vpart > data.maxLine ) {
-              data.maxLine = vpart;
-            }
-            data.range.add( vpart );
+        } else if ( part.matches( "\\d+\\.\\.\\d+" ) ) {
+          String[] rangeMultiPart = part.split( "\\.\\." );
+          Integer start = Integer.valueOf( rangeMultiPart[0] );
+          Integer end = Integer.valueOf( rangeMultiPart[1] );
+          Range<Integer> range = Range.closed( start, end );
+          if ( log.isDebug() ) {
+            logDebug( BaseMessages.getString( PKG, "SampleRows.Log.RangeValue", range ) );
           }
+          setBuilder.add( range );
         }
       }
+      data.rangeSet = setBuilder.build();
     } // end if first
 
-    if ( data.considerRow ) {
+    if ( data.addlineField ) {
+      data.outputRow = RowDataUtil.allocateRowData( data.outputRowMeta.size() );
+      for ( int i = 0; i < data.NrPrevFields; i++ ) {
+        data.outputRow[i] = r[i];
+      }
+    } else {
+      data.outputRow = r;
+    }
 
+    int linesRead = (int) getLinesRead();
+    if ( data.rangeSet.contains( linesRead ) ) {
       if ( data.addlineField ) {
-        data.outputRow = RowDataUtil.allocateRowData( data.outputRowMeta.size() );
-        for ( int i = 0; i < data.NrPrevFields; i++ ) {
-          data.outputRow[i] = r[i];
-        }
-      } else {
-        data.outputRow = r;
+        data.outputRow[data.NrPrevFields] = getLinesRead();
       }
 
-      if ( data.range.contains( (int) getLinesRead() ) ) {
-        if ( data.addlineField ) {
-          data.outputRow[data.NrPrevFields] = getLinesRead();
-        }
+      // copy row to possible alternate rowset(s).
+      //
+      putRow( data.outputRowMeta, data.outputRow );
 
-        // copy row to possible alternate rowset(s).
-        //
-        putRow( data.outputRowMeta, data.outputRow );
-
-        if ( log.isRowLevel() ) {
-          logRowlevel( BaseMessages.getString( PKG, "SampleRows.Log.LineNumber", getLinesRead()
-            + " : " + getInputRowMeta().getString( r ) ) );
-        }
-      }
-
-      if ( data.maxLine > 0 && getLinesRead() >= data.maxLine ) {
-        data.considerRow = false;
+      if ( log.isRowLevel() ) {
+        logRowlevel( BaseMessages.getString( PKG, "SampleRows.Log.LineNumber", linesRead
+          + " : " + getInputRowMeta().getString( r ) ) );
       }
     }
 
+    // Check if maximum value has been exceeded
+    if ( data.rangeSet.isEmpty() || linesRead >= data.rangeSet.span().upperEndpoint() ) {
+      setOutputDone();
+    }
+
+    // Allowed to continue to read in data
     return true;
   }
 

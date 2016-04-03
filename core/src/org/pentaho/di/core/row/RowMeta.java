@@ -22,6 +22,19 @@
 
 package org.pentaho.di.core.row;
 
+import com.google.common.annotations.VisibleForTesting;
+import org.pentaho.di.compatibility.Row;
+import org.pentaho.di.compatibility.Value;
+import org.pentaho.di.core.Const;
+import org.pentaho.di.core.exception.KettleEOFException;
+import org.pentaho.di.core.exception.KettleException;
+import org.pentaho.di.core.exception.KettleFileException;
+import org.pentaho.di.core.exception.KettlePluginException;
+import org.pentaho.di.core.exception.KettleValueException;
+import org.pentaho.di.core.row.value.ValueMetaFactory;
+import org.pentaho.di.core.xml.XMLHandler;
+import org.w3c.dom.Node;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -37,81 +50,89 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-import org.pentaho.di.compatibility.Row;
-import org.pentaho.di.compatibility.Value;
-import org.pentaho.di.core.Const;
-import org.pentaho.di.core.exception.KettleEOFException;
-import org.pentaho.di.core.exception.KettleException;
-import org.pentaho.di.core.exception.KettleFileException;
-import org.pentaho.di.core.exception.KettlePluginException;
-import org.pentaho.di.core.exception.KettleValueException;
-import org.pentaho.di.core.row.value.ValueMetaFactory;
-import org.pentaho.di.core.xml.XMLHandler;
-import org.w3c.dom.Node;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class RowMeta implements RowMetaInterface {
   public static final String XML_META_TAG = "row-meta";
   public static final String XML_DATA_TAG = "row-data";
 
+  private final ReentrantReadWriteLock lock;
+  private final RowMetaCache cache;
   private List<ValueMetaInterface> valueMetaList;
-  private List<Integer> valuesThatNeedRealClone;
-  private Map<String, Integer> valueIndexMap;
 
   public RowMeta() {
-    valueMetaList = new ArrayList<ValueMetaInterface>();
-    valueIndexMap = new ConcurrentHashMap<String, Integer>();
+    this( new ArrayList<ValueMetaInterface>(), new RowMetaCache() );
+  }
+
+  /**
+   * Copy constructor for clone
+   *
+   * @param rowMeta
+   * @throws KettlePluginException
+   */
+  private RowMeta( RowMeta rowMeta, Integer targetType ) throws KettlePluginException {
+    this( new ArrayList<ValueMetaInterface>( rowMeta.valueMetaList.size() ), new RowMetaCache( rowMeta.cache ) );
+    for ( ValueMetaInterface valueMetaInterface : rowMeta.valueMetaList ) {
+      valueMetaList.add( ValueMetaFactory
+        .cloneValueMeta( valueMetaInterface, targetType == null ? valueMetaInterface.getType() : targetType ) );
+    }
+  }
+
+  private RowMeta( List<ValueMetaInterface> valueMetaList, RowMetaCache rowMetaCache ) {
+    lock = new ReentrantReadWriteLock();
+    this.cache = rowMetaCache;
+    this.valueMetaList = valueMetaList;
   }
 
   @Override
   public RowMeta clone() {
+    lock.readLock().lock();
     try {
-      RowMeta rowMeta = new RowMeta();
-      for ( int i = 0; i < size(); i++ ) {
-        ValueMetaInterface valueMeta = getValueMeta( i );
-        rowMeta.addValueMeta( ValueMetaFactory.cloneValueMeta( valueMeta ) );
-      }
-      return rowMeta;
+      return new RowMeta( this, null );
     } catch ( Exception e ) {
       throw new RuntimeException( e );
+    } finally {
+      lock.readLock().unlock();
     }
   }
 
   /**
    * This method copies the row metadata and sets all values to the specified type (usually String)
    *
-   * @param targetType
-   *          The target type
+   * @param targetType The target type
    * @return The cloned metadata
-   * @throws if
-   *           the target type could not be loaded from the plugin registry
+   * @throws if the target type could not be loaded from the plugin registry
    */
   @Override
   public RowMetaInterface cloneToType( int targetType ) throws KettleValueException {
+    lock.readLock().lock();
     try {
-      RowMeta rowMeta = new RowMeta();
-      for ( ValueMetaInterface valueMeta : getValueMetaList() ) {
-        rowMeta.addValueMeta( ValueMetaFactory.cloneValueMeta( valueMeta, targetType ) );
-      }
-      return rowMeta;
+      return new RowMeta( this, targetType );
     } catch ( KettlePluginException e ) {
       throw new KettleValueException( e );
+    } finally {
+      lock.readLock().unlock();
     }
   }
 
   @Override
   public String toString() {
-    StringBuffer buffer = new StringBuffer();
-    for ( int i = 0; i < size(); i++ ) {
-      if ( i > 0 ) {
-        buffer.append( ", " );
+    StringBuilder buffer = new StringBuilder();
+    lock.readLock().lock();
+    try {
+      boolean notFirst = false;
+      for ( ValueMetaInterface valueMeta : valueMetaList ) {
+        if ( notFirst ) {
+          buffer.append( ", " );
+        } else {
+          notFirst = true;
+        }
+        buffer.append( "[" ).append( valueMeta.toString() ).append( "]" );
       }
-      buffer.append( "[" );
-      buffer.append( getValueMeta( i ).toString() );
-      buffer.append( "]" );
+      return buffer.toString();
+    } finally {
+      lock.readLock().unlock();
     }
-    return buffer.toString();
   }
 
   /**
@@ -119,23 +140,33 @@ public class RowMeta implements RowMetaInterface {
    */
   @Override
   public List<ValueMetaInterface> getValueMetaList() {
-    return Collections.unmodifiableList( valueMetaList );
+    List<ValueMetaInterface> copy;
+
+    lock.readLock().lock();
+    try {
+      copy = new ArrayList<ValueMetaInterface>( valueMetaList );
+    } finally {
+      lock.readLock().unlock();
+    }
+    // kept for backward compatibility
+    return Collections.unmodifiableList( copy );
   }
 
   /**
-   * @param valueMetaList
-   *          the list of valueMeta to set
+   * @param valueMetaList the list of valueMeta to set
    */
   @Override
   public void setValueMetaList( List<ValueMetaInterface> valueMetaList ) {
-    this.valueMetaList = valueMetaList;
-    // we have new list and we need re-hash
-    valueIndexMap.clear();
-    for ( int i = 0; i < this.valueMetaList.size(); i++ ) {
-      ValueMetaInterface valueMeta = this.valueMetaList.get( i );
-      if( !Const.isEmpty( valueMeta.getName() ) ) {
-        valueIndexMap.put( valueMeta.getName().toLowerCase(), i );
+    lock.writeLock().lock();
+    try {
+      this.valueMetaList = valueMetaList;
+      this.cache.invalidate();
+      for ( int i = 0, len = valueMetaList.size(); i < len; i++ ) {
+        ValueMetaInterface valueMeta = valueMetaList.get( i );
+        cache.storeMapping( valueMeta.getName(), i );
       }
+    } finally {
+      lock.writeLock().unlock();
     }
   }
 
@@ -144,7 +175,12 @@ public class RowMeta implements RowMetaInterface {
    */
   @Override
   public int size() {
-    return valueMetaList.size();
+    lock.readLock().lock();
+    try {
+      return valueMetaList.size();
+    } finally {
+      lock.readLock().unlock();
+    }
   }
 
   /**
@@ -152,7 +188,12 @@ public class RowMeta implements RowMetaInterface {
    */
   @Override
   public boolean isEmpty() {
-    return size() == 0;
+    lock.readLock().lock();
+    try {
+      return valueMetaList.isEmpty();
+    } finally {
+      lock.readLock().unlock();
+    }
   }
 
   @Override
@@ -163,35 +204,50 @@ public class RowMeta implements RowMetaInterface {
   /**
    * Add a metadata value. If a value with the same name already exists, it gets renamed.
    *
-   * @param meta
-   *          The metadata value to add
+   * @param meta The metadata value to add
    */
   @Override
   public void addValueMeta( ValueMetaInterface meta ) {
-    addValueMeta( valueMetaList.size(), meta );
+    if ( meta != null ) {
+      lock.writeLock().lock();
+      try {
+        ValueMetaInterface newMeta;
+        if ( !exists( meta ) ) {
+          newMeta = meta;
+        } else {
+          newMeta = renameValueMetaIfInRow( meta, null );
+        }
+        int index = valueMetaList.size();
+        valueMetaList.add( newMeta );
+        cache.storeMapping( newMeta.getName(), index );
+      } finally {
+        lock.writeLock().unlock();
+      }
+    }
   }
 
   /**
    * Add a metadata value on a certain location in the row. If a value with the same name already exists, it gets
    * renamed. Remember to change the data row according to this.
    *
-   * @param index
-   *          The index where the metadata value needs to be put in the row
-   * @param meta
-   *          The metadata value to add to the row
+   * @param index The index where the metadata value needs to be put in the row
+   * @param meta  The metadata value to add to the row
    */
   @Override
   public void addValueMeta( int index, ValueMetaInterface meta ) {
     if ( meta != null ) {
-      ValueMetaInterface newMeta;
-      if ( !exists( meta ) ) {
-        newMeta = meta;
-      } else {
-        newMeta = renameValueMetaIfInRow( meta );
-      }
-      valueMetaList.add( index, newMeta );
-      if( !Const.isEmpty( newMeta.getName() ) ) {
-        valueIndexMap.put( newMeta.getName().toLowerCase(), index );
+      lock.writeLock().lock();
+      try {
+        ValueMetaInterface newMeta;
+        if ( !exists( meta ) ) {
+          newMeta = meta;
+        } else {
+          newMeta = renameValueMetaIfInRow( meta, null );
+        }
+        valueMetaList.add( index, newMeta );
+        cache.invalidate();
+      } finally {
+        lock.writeLock().unlock();
       }
     }
   }
@@ -199,34 +255,39 @@ public class RowMeta implements RowMetaInterface {
   /**
    * Get the value metadata on the specified index.
    *
-   * @param index
-   *          The index to get the value metadata from
+   * @param index The index to get the value metadata from
    * @return The value metadata specified by the index.
    */
   @Override
   public ValueMetaInterface getValueMeta( int index ) {
-    if ( ( index >= 0 ) && ( index < valueMetaList.size() ) ) {
-      return valueMetaList.get( index );
-    } else {
-      return null;
+    lock.readLock().lock();
+    try {
+      if ( ( index >= 0 ) && ( index < valueMetaList.size() ) ) {
+        return valueMetaList.get( index );
+      } else {
+        return null;
+      }
+    } finally {
+      lock.readLock().unlock();
     }
   }
 
   /**
    * Replaces a value meta entry in the row metadata with another one
    *
-   * @param index
-   *          The index in the row to replace at
-   * @param valueMeta
-   *          the metadata to replace with
+   * @param index     The index in the row to replace at
+   * @param valueMeta the metadata to replace with
    */
   @Override
   public void setValueMeta( int index, ValueMetaInterface valueMeta ) {
     if ( valueMeta != null ) {
-      valueMetaList.set( index, valueMeta );
-      // add value meta to cache if name is not null
-      if( !Const.isEmpty( valueMeta.getName() ) ) {
-        valueIndexMap.put( valueMeta.getName().toLowerCase(), index );
+      lock.writeLock().lock();
+      try {
+        ValueMetaInterface old = valueMetaList.get( index );
+        valueMetaList.set( index, valueMeta );
+        cache.replaceMapping( old.getName(), valueMeta.getName(), index );
+      } finally {
+        lock.writeLock().unlock();
       }
     }
   }
@@ -234,153 +295,129 @@ public class RowMeta implements RowMetaInterface {
   /**
    * Get a String value from a row of data. Convert data if this needed.
    *
-   * @param rowRow
-   *          the row of data
-   * @param index
-   *          the index
+   * @param dataRow the row of data
+   * @param index   the index
    * @return The string found on that position in the row
-   * @throws KettleValueException
-   *           in case there was a problem converting the data.
+   * @throws KettleValueException in case there was a problem converting the data.
    */
   @Override
   public String getString( Object[] dataRow, int index ) throws KettleValueException {
     if ( dataRow == null ) {
       return null;
     }
-    ValueMetaInterface meta = valueMetaList.get( index );
-    return meta.getString( dataRow[index] );
+    ValueMetaInterface meta = getValueMeta( index );
+    return meta.getString( dataRow[ index ] );
   }
 
   /**
    * Get an Integer value from a row of data. Convert data if this needed.
    *
-   * @param rowRow
-   *          the row of data
-   * @param index
-   *          the index
+   * @param dataRow the row of data
+   * @param index   the index
    * @return The integer found on that position in the row
-   * @throws KettleValueException
-   *           in case there was a problem converting the data.
+   * @throws KettleValueException in case there was a problem converting the data.
    */
   @Override
   public Long getInteger( Object[] dataRow, int index ) throws KettleValueException {
     if ( dataRow == null ) {
       return null;
     }
-    ValueMetaInterface meta = valueMetaList.get( index );
-    return meta.getInteger( dataRow[index] );
+    ValueMetaInterface meta = getValueMeta( index );
+    return meta.getInteger( dataRow[ index ] );
   }
 
   /**
    * Get a Number value from a row of data. Convert data if this needed.
    *
-   * @param rowRow
-   *          the row of data
-   * @param index
-   *          the index
+   * @param dataRow the row of data
+   * @param index   the index
    * @return The number found on that position in the row
-   * @throws KettleValueException
-   *           in case there was a problem converting the data.
+   * @throws KettleValueException in case there was a problem converting the data.
    */
   @Override
   public Double getNumber( Object[] dataRow, int index ) throws KettleValueException {
     if ( dataRow == null ) {
       return null;
     }
-    ValueMetaInterface meta = valueMetaList.get( index );
-    return meta.getNumber( dataRow[index] );
+    ValueMetaInterface meta = getValueMeta( index );
+    return meta.getNumber( dataRow[ index ] );
   }
 
   /**
    * Get a Date value from a row of data. Convert data if this needed.
    *
-   * @param rowRow
-   *          the row of data
-   * @param index
-   *          the index
+   * @param dataRow the row of data
+   * @param index   the index
    * @return The date found on that position in the row
-   * @throws KettleValueException
-   *           in case there was a problem converting the data.
+   * @throws KettleValueException in case there was a problem converting the data.
    */
   @Override
   public Date getDate( Object[] dataRow, int index ) throws KettleValueException {
     if ( dataRow == null ) {
       return null;
     }
-    ValueMetaInterface meta = valueMetaList.get( index );
-    return meta.getDate( dataRow[index] );
+    ValueMetaInterface meta = getValueMeta( index );
+    return meta.getDate( dataRow[ index ] );
   }
 
   /**
    * Get a BigNumber value from a row of data. Convert data if this needed.
    *
-   * @param rowRow
-   *          the row of data
-   * @param index
-   *          the index
+   * @param dataRow the row of data
+   * @param index   the index
    * @return The bignumber found on that position in the row
-   * @throws KettleValueException
-   *           in case there was a problem converting the data.
+   * @throws KettleValueException in case there was a problem converting the data.
    */
   @Override
   public BigDecimal getBigNumber( Object[] dataRow, int index ) throws KettleValueException {
     if ( dataRow == null ) {
       return null;
     }
-    ValueMetaInterface meta = valueMetaList.get( index );
-    return meta.getBigNumber( dataRow[index] );
+    ValueMetaInterface meta = getValueMeta( index );
+    return meta.getBigNumber( dataRow[ index ] );
   }
 
   /**
    * Get a Boolean value from a row of data. Convert data if this needed.
    *
-   * @param rowRow
-   *          the row of data
-   * @param index
-   *          the index
+   * @param dataRow the row of data
+   * @param index   the index
    * @return The boolean found on that position in the row
-   * @throws KettleValueException
-   *           in case there was a problem converting the data.
+   * @throws KettleValueException in case there was a problem converting the data.
    */
   @Override
   public Boolean getBoolean( Object[] dataRow, int index ) throws KettleValueException {
     if ( dataRow == null ) {
       return null;
     }
-    ValueMetaInterface meta = valueMetaList.get( index );
-    return meta.getBoolean( dataRow[index] );
+    ValueMetaInterface meta = getValueMeta( index );
+    return meta.getBoolean( dataRow[ index ] );
   }
 
   /**
    * Get a Binary value from a row of data. Convert data if this needed.
    *
-   * @param rowRow
-   *          the row of data
-   * @param index
-   *          the index
+   * @param dataRow the row of data
+   * @param index   the index
    * @return The binary found on that position in the row
-   * @throws KettleValueException
-   *           in case there was a problem converting the data.
+   * @throws KettleValueException in case there was a problem converting the data.
    */
   @Override
   public byte[] getBinary( Object[] dataRow, int index ) throws KettleValueException {
     if ( dataRow == null ) {
       return null;
     }
-    ValueMetaInterface meta = valueMetaList.get( index );
-    return meta.getBinary( dataRow[index] );
+    ValueMetaInterface meta = getValueMeta( index );
+    return meta.getBinary( dataRow[ index ] );
   }
 
   /**
    * Determines whether a value in a row is null. A value is null when the object is null or when it's an empty String
    *
-   * @param dataRow
-   *          The row of data
-   * @param index
-   *          the index to reference
+   * @param dataRow The row of data
+   * @param index   the index to reference
    * @return true if the value on the index is null.
-   * @throws KettleValueException
-   *           in case there is a conversion error (only thrown in case of lazy conversion)
+   * @throws KettleValueException in case there is a conversion error (only thrown in case of lazy conversion)
    */
   @Override
   public boolean isNull( Object[] dataRow, int index ) throws KettleValueException {
@@ -388,13 +425,12 @@ public class RowMeta implements RowMetaInterface {
       // I guess so...
       return true;
     }
-    return getValueMeta( index ).isNull( dataRow[index] );
+    return getValueMeta( index ).isNull( dataRow[ index ] );
   }
 
   /**
    * @return a cloned Object[] object.
-   * @throws KettleValueException
-   *           in case something is not quite right with the expected data
+   * @throws KettleValueException in case something is not quite right with the expected data
    */
   @Override
   public Object[] cloneRow( Object[] objects ) throws KettleValueException {
@@ -403,25 +439,21 @@ public class RowMeta implements RowMetaInterface {
 
   /**
    * @return a cloned Object[] object.
-   * @throws KettleValueException
-   *           in case something is not quite right with the expected data
+   * @throws KettleValueException in case something is not quite right with the expected data
    */
   @Override
   public Object[] cloneRow( Object[] objects, Object[] newObjects ) throws KettleValueException {
-    if ( valuesThatNeedRealClone == null ) {
-      valuesThatNeedRealClone = new ArrayList<Integer>();
-      for ( int i = 0; i < size(); i++ ) {
-        ValueMetaInterface valueMeta = getValueMeta( i );
-        if ( valueMeta.requiresRealClone() ) {
-          valuesThatNeedRealClone.add( i );
-        }
+    lock.readLock().lock();
+    try {
+      List<Integer> list = cache.getOrCreateValuesThatNeedRealClone( valueMetaList );
+      for ( Integer i : list ) {
+        ValueMetaInterface valueMeta = valueMetaList.get( i );
+        newObjects[ i ] = valueMeta.cloneValueData( objects[ i ] );
       }
+      return newObjects;
+    } finally {
+      lock.readLock().unlock();
     }
-    for ( Integer i : valuesThatNeedRealClone ) {
-      ValueMetaInterface valueMeta = getValueMeta( i );
-      newObjects[i] = valueMeta.cloneValueData( objects[i] );
-    }
-    return newObjects;
   }
 
   @Override
@@ -454,50 +486,54 @@ public class RowMeta implements RowMetaInterface {
   /**
    * Searches the index of a value meta with a given name
    *
-   * @param valueName
-   *          the name of the value metadata to look for
+   * @param valueName the name of the value metadata to look for
    * @return the index or -1 in case we didn't find the value
    */
   @Override
   public int indexOfValue( String valueName ) {
-    if( valueName == null ) {
+    if ( valueName == null ) {
       return -1;
     }
-    String key = valueName.toLowerCase();
-    Integer index = valueIndexMap.get( key );
-    if( index != null ) {
-      ValueMetaInterface value = valueMetaList.get( index );
-      if ( !valueName.equalsIgnoreCase( value.getName() ) ) {
-        index = null;
-        valueIndexMap.remove( key );
+
+    lock.readLock().lock();
+    try {
+      Integer index = cache.findAndCompare( valueName, valueMetaList );
+      for ( int i = 0; ( index == null ) && ( i < valueMetaList.size() ); i++ ) {
+        if ( valueName.equalsIgnoreCase( valueMetaList.get( i ).getName() ) ) {
+          index = i;
+          // it is possible, that several threads can call storing simultaneously
+          // but it makes no harm as they will put the same value,
+          // because valueMetaList is defended from modifications by read lock
+          cache.storeMapping( valueName, index );
+        }
       }
-    }
-    for ( int i = 0; ( index == null ) && ( i < valueMetaList.size() ); i++ ) {
-      if ( valueName.equalsIgnoreCase( valueMetaList.get( i ).getName() ) ) {
-        index = i;
-        valueIndexMap.put( key, index );
+      if ( index == null ) {
+        return -1;
       }
+      return index;
+    } finally {
+      lock.readLock().unlock();
     }
-    if ( index == null ) {
-      return -1;
-    }
-    return index;
   }
 
   /**
    * Searches for a value with a certain name in the value meta list
    *
-   * @param valueName
-   *          The value name to search for
+   * @param valueName The value name to search for
    * @return The value metadata or null if nothing was found
    */
   @Override
   public ValueMetaInterface searchValueMeta( String valueName ) {
-    Integer index = indexOfValue( valueName );
-    if ( index < 0 ) {
-      return null;
+    lock.readLock().lock();
+    try {
+      Integer index = indexOfValue( valueName );
+      if ( index < 0 ) {
+        return null;
+      }
+      return valueMetaList.get( index );
+    } finally {
+      lock.readLock().unlock();
     }
-    return valueMetaList.get( index );
   }
 
   @Override
@@ -511,24 +547,41 @@ public class RowMeta implements RowMetaInterface {
    * Merge the values of row r to this Row. The values that are not yet in the row are added unchanged. The values that
    * are in the row are renamed to name_2, name_3, etc.
    *
-   * @param r
-   *          The row to be merged with this row
+   * @param r The row to be merged with this row
    */
   @Override
   public void mergeRowMeta( RowMetaInterface r ) {
-    for ( int x = 0; x < r.size(); x++ ) {
-      ValueMetaInterface field = r.getValueMeta( x );
-      if ( searchValueMeta( field.getName() ) == null ) {
-        addValueMeta( field ); // Not in list yet: add
-      } else {
-        // We want to rename the field to Name[2], Name[3], ...
-        //
-        addValueMeta( renameValueMetaIfInRow( field ) );
+    mergeRowMeta( r, null );
+  }
+
+  /**
+   * Merge the values of row r to this Row. The fields that are not yet in the row are added unchanged. The fields that
+   * are in the row are renamed to name_2, name_3, etc. If the fields are renamed, the provided originStepName will be
+   * assigned as the origin step for those fields.
+   *
+   * @param r              The row to be merged with this row
+   * @param originStepName The name to use as the origin step
+   */
+  @Override
+  public void mergeRowMeta( RowMetaInterface r, String originStepName ) {
+    lock.writeLock().lock();
+    try {
+      for ( int x = 0; x < r.size(); x++ ) {
+        ValueMetaInterface field = r.getValueMeta( x );
+        if ( searchValueMeta( field.getName() ) == null ) {
+          addValueMeta( field ); // Not in list yet: add
+        } else {
+          // We want to rename the field to Name[2], Name[3], ...
+          //
+          addValueMeta( renameValueMetaIfInRow( field, originStepName ) );
+        }
       }
+    } finally {
+      lock.writeLock().unlock();
     }
   }
 
-  private ValueMetaInterface renameValueMetaIfInRow( ValueMetaInterface valueMeta ) {
+  private ValueMetaInterface renameValueMetaIfInRow( ValueMetaInterface valueMeta, String originStep ) {
     // We want to rename the field to Name[2], Name[3], ...
     //
     int index = 1;
@@ -543,10 +596,12 @@ public class RowMeta implements RowMetaInterface {
     //
     ValueMetaInterface copy = valueMeta.clone();
 
-    // OK, this is the new name to pick
+    // OK, this is the new name and origin to pick
     //
     copy.setName( name );
-
+    if ( originStep != null ) {
+      copy.setOrigin( originStep );
+    }
     return copy;
   }
 
@@ -557,64 +612,76 @@ public class RowMeta implements RowMetaInterface {
    */
   @Override
   public String[] getFieldNames() {
-    String[] retval = new String[size()];
+    lock.readLock().lock();
+    try {
+      String[] retval = new String[ size() ];
 
-    for ( int i = 0; i < size(); i++ ) {
-      retval[i] = getValueMeta( i ).getName();
+      for ( int i = 0; i < size(); i++ ) {
+        retval[ i ] = getValueMeta( i ).getName();
+      }
+
+      return retval;
+    } finally {
+      lock.readLock().unlock();
     }
-
-    return retval;
   }
 
   /**
    * Write ONLY the specified data to the outputStream
    *
-   * @throws KettleFileException
-   *           in case things go awry
+   * @throws KettleFileException in case things go awry
    */
   @Override
   public void writeData( DataOutputStream outputStream, Object[] data ) throws KettleFileException {
-    // Write all values in the row
-    for ( int i = 0; i < size(); i++ ) {
-      getValueMeta( i ).writeData( outputStream, data[i] );
-    }
-
-    // If there are 0 values in the row, we write a marker flag to be able to detect an EOF on the other end (sockets
-    // etc)
-    //
-    if ( size() == 0 ) {
-      try {
-        outputStream.writeBoolean( true );
-      } catch ( IOException e ) {
-        throw new KettleFileException( "Error writing marker flag", e );
+    lock.readLock().lock();
+    try {
+      // Write all values in the row
+      for ( int i = 0; i < size(); i++ ) {
+        getValueMeta( i ).writeData( outputStream, data[ i ] );
       }
+
+      // If there are 0 values in the row, we write a marker flag to be able to detect an EOF on the other end (sockets
+      // etc)
+      //
+      if ( size() == 0 ) {
+        try {
+          outputStream.writeBoolean( true );
+        } catch ( IOException e ) {
+          throw new KettleFileException( "Error writing marker flag", e );
+        }
+      }
+    } finally {
+      lock.readLock().unlock();
     }
   }
 
   /**
    * Write ONLY the specified metadata to the outputStream
    *
-   * @throws KettleFileException
-   *           in case things go awry
+   * @throws KettleFileException in case things go awry
    */
   @Override
   public void writeMeta( DataOutputStream outputStream ) throws KettleFileException {
-    // First handle the number of fields in a row
+    lock.readLock().lock();
     try {
-      outputStream.writeInt( size() );
-    } catch ( IOException e ) {
-      throw new KettleFileException( "Unable to write nr of metadata values", e );
-    }
+      // First handle the number of fields in a row
+      try {
+        outputStream.writeInt( size() );
+      } catch ( IOException e ) {
+        throw new KettleFileException( "Unable to write nr of metadata values", e );
+      }
 
-    // Write all values in the row
-    for ( int i = 0; i < size(); i++ ) {
-      getValueMeta( i ).writeMeta( outputStream );
+      // Write all values in the row
+      for ( int i = 0; i < size(); i++ ) {
+        getValueMeta( i ).writeMeta( outputStream );
+      }
+    } finally {
+      lock.readLock().unlock();
     }
 
   }
 
-  public RowMeta( DataInputStream inputStream ) throws KettleFileException, KettleEOFException,
-    SocketTimeoutException {
+  public RowMeta( DataInputStream inputStream ) throws KettleFileException, SocketTimeoutException {
     this();
 
     int nr;
@@ -645,47 +712,66 @@ public class RowMeta implements RowMetaInterface {
   }
 
   @Override
-  public Object[] readData( DataInputStream inputStream ) throws KettleFileException, KettleEOFException,
-    SocketTimeoutException {
-    Object[] data = new Object[size()];
-    for ( int i = 0; i < size(); i++ ) {
-      data[i] = getValueMeta( i ).readData( inputStream );
-    }
-    if ( size() == 0 ) {
-      try {
-        inputStream.readBoolean();
-      } catch ( EOFException e ) {
-        throw new KettleEOFException( e );
-      } catch ( SocketTimeoutException e ) {
-        throw e;
-      } catch ( IOException e ) {
-        throw new KettleFileException( toString() + " : Unable to read the marker flag data from input stream", e );
+  public Object[] readData( DataInputStream inputStream ) throws KettleFileException, SocketTimeoutException {
+    lock.readLock().lock();
+    try {
+      Object[] data = new Object[ size() ];
+      for ( int i = 0; i < size(); i++ ) {
+        data[ i ] = getValueMeta( i ).readData( inputStream );
       }
+      if ( size() == 0 ) {
+        try {
+          inputStream.readBoolean();
+        } catch ( EOFException e ) {
+          throw new KettleEOFException( e );
+        } catch ( SocketTimeoutException e ) {
+          throw e;
+        } catch ( IOException e ) {
+          throw new KettleFileException( toString() + " : Unable to read the marker flag data from input stream", e );
+        }
 
+      }
+      return data;
+    } finally {
+      lock.readLock().unlock();
     }
-    return data;
   }
 
   @Override
   public void clear() {
-    valueMetaList.clear();
-    valueIndexMap.clear();
+    lock.writeLock().lock();
+    try {
+      valueMetaList.clear();
+      cache.invalidate();
+    } finally {
+      lock.writeLock().unlock();
+    }
   }
 
   @Override
   public void removeValueMeta( String valueName ) throws KettleValueException {
-    int index = indexOfValue( valueName );
-    if ( index < 0 ) {
-      throw new KettleValueException( "Unable to find value metadata with name '"
-        + valueName + "', so I can't delete it." );
+    lock.writeLock().lock();
+    try {
+      int index = indexOfValue( valueName );
+      if ( index < 0 ) {
+        throw new KettleValueException( "Unable to find value metadata with name '"
+          + valueName + "', so I can't delete it." );
+      }
+      removeValueMeta( index );
+    } finally {
+      lock.writeLock().unlock();
     }
-    removeValueMeta( index );
   }
 
   @Override
   public void removeValueMeta( int index ) {
-    valueMetaList.remove( index );
-    valueIndexMap.clear();
+    lock.writeLock().lock();
+    try {
+      valueMetaList.remove( index );
+      cache.invalidate();
+    } finally {
+      lock.writeLock().unlock();
+    }
   }
 
   /**
@@ -693,202 +779,225 @@ public class RowMeta implements RowMetaInterface {
    */
   @Override
   public String toStringMeta() {
-    StringBuffer buffer = new StringBuffer();
-    for ( int i = 0; i < size(); i++ ) {
-      if ( i > 0 ) {
-        buffer.append( ", " );
+    StringBuilder buffer = new StringBuilder();
+    lock.readLock().lock();
+    try {
+      boolean notFirst = false;
+      for ( ValueMetaInterface valueMeta : valueMetaList ) {
+        if ( notFirst ) {
+          buffer.append( ", " );
+        } else {
+          notFirst = true;
+        }
+        buffer.append( "[" ).append( valueMeta.toStringMeta() ).append( "]" );
       }
-      buffer.append( "[" );
-      buffer.append( getValueMeta( i ).toStringMeta() );
-      buffer.append( "]" );
+      return buffer.toString();
+    } finally {
+      lock.readLock().unlock();
     }
-    return buffer.toString();
   }
 
   /**
    * Get the string representation of the data in a row of data
    *
-   * @param row
-   *          the row of data to convert to string
+   * @param row the row of data to convert to string
    * @return the row of data in string form
-   * @throws KettleValueException
-   *           in case of a conversion error
+   * @throws KettleValueException in case of a conversion error
    */
   @Override
   public String getString( Object[] row ) throws KettleValueException {
-    StringBuffer buffer = new StringBuffer();
-    for ( int i = 0; i < size(); i++ ) {
-      if ( i > 0 ) {
-        buffer.append( ", " );
+    lock.readLock().lock();
+    try {
+      StringBuilder buffer = new StringBuilder();
+      for ( int i = 0; i < size(); i++ ) {
+        if ( i > 0 ) {
+          buffer.append( ", " );
+        }
+        buffer.append( "[" );
+        buffer.append( getString( row, i ) );
+        buffer.append( "]" );
       }
-      buffer.append( "[" );
-      buffer.append( getString( row, i ) );
-      buffer.append( "]" );
+      return buffer.toString();
+    } finally {
+      lock.readLock().unlock();
     }
-    return buffer.toString();
   }
 
   /**
    * Get an array of strings showing the name of the values in the row padded to a maximum length, followed by the types
    * of the values.
    *
-   * @param maxlen
-   *          The length to which the name will be padded.
+   * @param maxlen The length to which the name will be padded.
    * @return an array of strings: the names and the types of the fieldnames in the row.
    */
   @Override
   public String[] getFieldNamesAndTypes( int maxlen ) {
-    String[] retval = new String[size()];
+    lock.readLock().lock();
+    try {
+      final int size = size();
+      String[] retval = new String[ size ];
 
-    for ( int i = 0; i < size(); i++ ) {
-      ValueMetaInterface v = getValueMeta( i );
-      retval[i] = Const.rightPad( v.getName(), maxlen ) + "   (" + v.getTypeDesc() + ")";
+      for ( int i = 0; i < size; i++ ) {
+        ValueMetaInterface v = getValueMeta( i );
+        retval[ i ] = Const.rightPad( v.getName(), maxlen ) + "   (" + v.getTypeDesc() + ")";
+      }
+
+      return retval;
+    } finally {
+      lock.readLock().unlock();
     }
-
-    return retval;
   }
 
   /**
    * Compare 2 rows with each other using certain values in the rows and also considering the specified ascending
    * clauses of the value metadata.
    *
-   * @param rowData1
-   *          The first row of data
-   * @param rowData2
-   *          The second row of data
-   * @param fieldnrs
-   *          the fields to compare on (in that order)
+   * @param rowData1 The first row of data
+   * @param rowData2 The second row of data
+   * @param fieldnrs the fields to compare on (in that order)
    * @return 0 if the rows are considered equal, -1 is data1 is smaller, 1 if data2 is smaller.
    * @throws KettleValueException
    */
   @Override
   public int compare( Object[] rowData1, Object[] rowData2, int[] fieldnrs ) throws KettleValueException {
-    for ( int i = 0; i < fieldnrs.length; i++ ) {
-      ValueMetaInterface valueMeta = getValueMeta( fieldnrs[i] );
+    lock.readLock().lock();
+    try {
+      for ( int fieldnr : fieldnrs ) {
+        ValueMetaInterface valueMeta = getValueMeta( fieldnr );
 
-      int cmp = valueMeta.compare( rowData1[fieldnrs[i]], rowData2[fieldnrs[i]] );
-      if ( cmp != 0 ) {
-        return cmp;
+        int cmp = valueMeta.compare( rowData1[ fieldnr ], rowData2[ fieldnr ] );
+        if ( cmp != 0 ) {
+          return cmp;
+        }
       }
-    }
 
-    return 0;
+      return 0;
+    } finally {
+      lock.readLock().unlock();
+    }
   }
 
   /**
    * Compare 2 rows with each other for equality using certain values in the rows and also considering the case
    * sensitivity flag.
    *
-   * @param rowData1
-   *          The first row of data
-   * @param rowData2
-   *          The second row of data
-   * @param fieldnrs
-   *          the fields to compare on (in that order)
+   * @param rowData1 The first row of data
+   * @param rowData2 The second row of data
+   * @param fieldnrs the fields to compare on (in that order)
    * @return true if the rows are considered equal, false if they are not.
    * @throws KettleValueException
    */
   @Override
   public boolean equals( Object[] rowData1, Object[] rowData2, int[] fieldnrs ) throws KettleValueException {
-    for ( int i = 0; i < fieldnrs.length; i++ ) {
-      ValueMetaInterface valueMeta = getValueMeta( fieldnrs[i] );
+    lock.readLock().lock();
+    try {
+      for ( int fieldnr : fieldnrs ) {
+        ValueMetaInterface valueMeta = getValueMeta( fieldnr );
 
-      int cmp = valueMeta.compare( rowData1[fieldnrs[i]], rowData2[fieldnrs[i]] );
-      if ( cmp != 0 ) {
-        return false;
+        int cmp = valueMeta.compare( rowData1[ fieldnr ], rowData2[ fieldnr ] );
+        if ( cmp != 0 ) {
+          return false;
+        }
       }
-    }
 
-    return true;
+      return true;
+    } finally {
+      lock.readLock().unlock();
+    }
   }
 
   /**
    * Compare 2 rows with each other using certain values in the rows and also considering the specified ascending
    * clauses of the value metadata.
    *
-   * @param rowData1
-   *          The first row of data
-   * @param rowData2
-   *          The second row of data
-   * @param fieldnrs1
-   *          The indexes of the values to compare in the first row
-   * @param fieldnrs2
-   *          The indexes of the values to compare with in the second row
+   * @param rowData1  The first row of data
+   * @param rowData2  The second row of data
+   * @param fieldnrs1 The indexes of the values to compare in the first row
+   * @param fieldnrs2 The indexes of the values to compare with in the second row
    * @return 0 if the rows are considered equal, -1 is data1 is smaller, 1 if data2 is smaller.
    * @throws KettleValueException
    */
   @Override
-  public int compare( Object[] rowData1, Object[] rowData2, int[] fieldnrs1, int[] fieldnrs2 ) throws KettleValueException {
+  public int compare( Object[] rowData1, Object[] rowData2, int[] fieldnrs1, int[] fieldnrs2 )
+    throws KettleValueException {
     int len = ( fieldnrs1.length < fieldnrs2.length ) ? fieldnrs1.length : fieldnrs2.length;
-    for ( int i = 0; i < len; i++ ) {
-      ValueMetaInterface valueMeta = getValueMeta( fieldnrs1[i] );
+    lock.readLock().lock();
+    try {
+      for ( int i = 0; i < len; i++ ) {
+        ValueMetaInterface valueMeta = getValueMeta( fieldnrs1[ i ] );
 
-      int cmp = valueMeta.compare( rowData1[fieldnrs1[i]], rowData2[fieldnrs2[i]] );
-      if ( cmp != 0 ) {
-        return cmp;
+        int cmp = valueMeta.compare( rowData1[ fieldnrs1[ i ] ], rowData2[ fieldnrs2[ i ] ] );
+        if ( cmp != 0 ) {
+          return cmp;
+        }
       }
-    }
 
-    return 0;
+      return 0;
+    } finally {
+      lock.readLock().unlock();
+    }
   }
 
   /**
    * Compare 2 rows with each other using certain values in the rows and also considering the specified ascending
    * clauses of the value metadata.
    *
-   * @param rowData1
-   *          The first row of data
-   * @param rowMeta2
-   *          the metadata of the second row of data
-   * @param rowData2
-   *          The second row of data
-   * @param fieldnrs1
-   *          The indexes of the values to compare in the first row
-   * @param fieldnrs2
-   *          The indexes of the values to compare with in the second row
+   * @param rowData1  The first row of data
+   * @param rowMeta2  the metadata of the second row of data
+   * @param rowData2  The second row of data
+   * @param fieldnrs1 The indexes of the values to compare in the first row
+   * @param fieldnrs2 The indexes of the values to compare with in the second row
    * @return 0 if the rows are considered equal, -1 is data1 is smaller, 1 if data2 is smaller.
    * @throws KettleValueException
    */
   @Override
   public int compare( Object[] rowData1, RowMetaInterface rowMeta2, Object[] rowData2, int[] fieldnrs1,
-    int[] fieldnrs2 ) throws KettleValueException {
+                      int[] fieldnrs2 ) throws KettleValueException {
     int len = ( fieldnrs1.length < fieldnrs2.length ) ? fieldnrs1.length : fieldnrs2.length;
-    for ( int i = 0; i < len; i++ ) {
-      ValueMetaInterface valueMeta1 = getValueMeta( fieldnrs1[i] );
-      ValueMetaInterface valueMeta2 = rowMeta2.getValueMeta( fieldnrs2[i] );
+    lock.readLock().lock();
+    try {
+      for ( int i = 0; i < len; i++ ) {
+        ValueMetaInterface valueMeta1 = getValueMeta( fieldnrs1[ i ] );
+        ValueMetaInterface valueMeta2 = rowMeta2.getValueMeta( fieldnrs2[ i ] );
 
-      int cmp = valueMeta1.compare( rowData1[fieldnrs1[i]], valueMeta2, rowData2[fieldnrs2[i]] );
-      if ( cmp != 0 ) {
-        return cmp;
+        int cmp = valueMeta1.compare( rowData1[ fieldnrs1[ i ] ], valueMeta2, rowData2[ fieldnrs2[ i ] ] );
+        if ( cmp != 0 ) {
+          return cmp;
+        }
       }
-    }
 
-    return 0;
+      return 0;
+    } finally {
+      lock.readLock().unlock();
+    }
   }
 
   /**
    * Compare 2 rows with each other using all values in the rows and also considering the specified ascending clauses of
    * the value metadata.
    *
-   * @param rowData1
-   *          The first row of data
-   * @param rowData2
-   *          The second row of data
+   * @param rowData1 The first row of data
+   * @param rowData2 The second row of data
    * @return 0 if the rows are considered equal, -1 is data1 is smaller, 1 if data2 is smaller.
    * @throws KettleValueException
    */
   @Override
   public int compare( Object[] rowData1, Object[] rowData2 ) throws KettleValueException {
-    for ( int i = 0; i < size(); i++ ) {
-      ValueMetaInterface valueMeta = getValueMeta( i );
+    lock.readLock().lock();
+    try {
+      for ( int i = 0; i < size(); i++ ) {
+        ValueMetaInterface valueMeta = getValueMeta( i );
 
-      int cmp = valueMeta.compare( rowData1[i], rowData2[i] );
-      if ( cmp != 0 ) {
-        return cmp;
+        int cmp = valueMeta.compare( rowData1[ i ], rowData2[ i ] );
+        if ( cmp != 0 ) {
+          return cmp;
+        }
       }
-    }
 
-    return 0;
+      return 0;
+    } finally {
+      lock.readLock().unlock();
+    }
   }
 
   /**
@@ -896,24 +1005,26 @@ public class RowMeta implements RowMetaInterface {
    * the individual hashCodes which can result in a lot of collisions for similar types of data (e.g. [A,B] == [B,A] and
    * is not suitable for normal use. It is kept to provide backward compatibility with CombinationLookup.lookupValues()
    *
-   * @param rowData
-   *          The data to calculate a hashCode with
+   * @param rowData The data to calculate a hashCode with
    * @return the calculated hashCode
-   * @throws KettleValueException
-   *           in case there is a data conversion error
+   * @throws KettleValueException in case there is a data conversion error
    * @deprecated
    */
   @Override
   @Deprecated
   public int oldXORHashCode( Object[] rowData ) throws KettleValueException {
     int hash = 0;
+    lock.readLock().lock();
+    try {
+      for ( int i = 0; i < size(); i++ ) {
+        ValueMetaInterface valueMeta = getValueMeta( i );
+        hash ^= valueMeta.hashCode( rowData[ i ] );
+      }
 
-    for ( int i = 0; i < size(); i++ ) {
-      ValueMetaInterface valueMeta = getValueMeta( i );
-      hash ^= valueMeta.hashCode( rowData[i] );
+      return hash;
+    } finally {
+      lock.readLock().unlock();
     }
-
-    return hash;
   }
 
   /**
@@ -924,11 +1035,9 @@ public class RowMeta implements RowMetaInterface {
    * value (as Date yyyy-MM-dd), the hashCodes will be different resulting in the two rows not being considered equal
    * via the hashCode even though compare() or equals() might consider them to be.
    *
-   * @param rowData
-   *          The data to calculate a hashCode with
+   * @param rowData The data to calculate a hashCode with
    * @return the calculated hashCode
-   * @throws KettleValueException
-   *           in case there is a data conversion error
+   * @throws KettleValueException in case there is a data conversion error
    */
   @Override
   public int hashCode( Object[] rowData ) throws KettleValueException {
@@ -941,11 +1050,9 @@ public class RowMeta implements RowMetaInterface {
    * ValueMeta converting them into the same value (e.g. ['2008-01-01:12:30'] and ['2008-01-01:00:00'] as Date
    * yyyy-MM-dd)
    *
-   * @param rowData
-   *          The data to calculate a hashCode with
+   * @param rowData The data to calculate a hashCode with
    * @return the calculated hashCode
-   * @throws KettleValueException
-   *           in case there is a data conversion error
+   * @throws KettleValueException in case there is a data conversion error
    */
   @Override
   public int convertedValuesHashCode( Object[] rowData ) throws KettleValueException {
@@ -954,22 +1061,25 @@ public class RowMeta implements RowMetaInterface {
     }
 
     int result = 1;
-    for ( int i = 0; i < rowData.length; i++ ) {
-      result = 31 * result + getValueMeta( i ).hashCode();
+    lock.readLock().lock();
+    try {
+      for ( int i = 0; i < rowData.length; i++ ) {
+        result = 31 * result + getValueMeta( i ).hashCode();
+      }
+      return result;
+    } finally {
+      lock.readLock().unlock();
     }
-    return result;
   }
 
   /**
    * Serialize a row of data to byte[]
    *
-   * @param metadata
-   *          the metadata to use
-   * @param row
-   *          the row of data
+   * @param metadata the metadata to use
+   * @param row      the row of data
    * @return a serialized form of the data as a byte array
    */
-  public static final byte[] extractData( RowMetaInterface metadata, Object[] row ) {
+  public static byte[] extractData( RowMetaInterface metadata, Object[] row ) {
     try {
       ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
       DataOutputStream dataOutputStream = new DataOutputStream( byteArrayOutputStream );
@@ -985,13 +1095,11 @@ public class RowMeta implements RowMetaInterface {
   /**
    * Create a row of data bases on a serialized format (byte[])
    *
-   * @param data
-   *          the serialized data
-   * @param metadata
-   *          the metadata to use
+   * @param data     the serialized data
+   * @param metadata the metadata to use
    * @return a new row of data
    */
-  public static final Object[] getRow( RowMetaInterface metadata, byte[] data ) {
+  public static Object[] getRow( RowMetaInterface metadata, byte[] data ) {
     try {
       ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream( data );
       DataInputStream dataInputStream = new DataInputStream( byteArrayInputStream );
@@ -1006,7 +1114,7 @@ public class RowMeta implements RowMetaInterface {
 
     for ( int i = 0; i < rowMeta.size(); i++ ) {
       ValueMetaInterface valueMeta = rowMeta.getValueMeta( i );
-      Object valueData = rowData[i];
+      Object valueData = rowData[ i ];
 
       Value value = valueMeta.createOriginalValue( valueData );
       row.addValue( value );
@@ -1017,17 +1125,21 @@ public class RowMeta implements RowMetaInterface {
 
   /**
    * @return an XML representation of the row metadata
-   * @throws IOException
-   *           Thrown in case there is an (Base64/GZip) encoding problem
+   * @throws IOException Thrown in case there is an (Base64/GZip) encoding problem
    */
   @Override
   public String getMetaXML() throws IOException {
-    StringBuffer xml = new StringBuffer();
+    StringBuilder xml = new StringBuilder();
 
     xml.append( "<" ).append( XML_META_TAG ).append( ">" );
 
-    for ( int i = 0; i < size(); i++ ) {
-      xml.append( getValueMeta( i ).getMetaXML() );
+    lock.readLock().lock();
+    try {
+      for ( int i = 0; i < size(); i++ ) {
+        xml.append( getValueMeta( i ).getMetaXML() );
+      }
+    } finally {
+      lock.readLock().unlock();
     }
 
     xml.append( "</" ).append( XML_META_TAG ).append( ">" );
@@ -1038,10 +1150,8 @@ public class RowMeta implements RowMetaInterface {
   /**
    * Create a new row metadata object from XML
    *
-   * @param node
-   *          the XML node to deserialize from
-   * @throws IOException
-   *           Thrown in case there is an (Base64/GZip) decoding problem
+   * @param node the XML node to deserialize from
+   * @throws IOException Thrown in case there is an (Base64/GZip) decoding problem
    */
   public RowMeta( Node node ) throws KettleException {
     this();
@@ -1053,20 +1163,23 @@ public class RowMeta implements RowMetaInterface {
   }
 
   /**
-   * @param rowData
-   *          the row of data to serialize as XML
+   * @param rowData the row of data to serialize as XML
    * @return an XML representation of the row data
-   * @throws IOException
-   *           Thrown in case there is an (Base64/GZip) encoding problem
+   * @throws IOException Thrown in case there is an (Base64/GZip) encoding problem
    */
   @Override
   public String getDataXML( Object[] rowData ) throws IOException {
-    StringBuffer xml = new StringBuffer();
+    StringBuilder xml = new StringBuilder();
 
     xml.append( "<" ).append( XML_DATA_TAG ).append( ">" );
 
-    for ( int i = 0; i < size(); i++ ) {
-      xml.append( getValueMeta( i ).getDataXML( rowData[i] ) );
+    lock.readLock().lock();
+    try {
+      for ( int i = 0; i < size(); i++ ) {
+        xml.append( getValueMeta( i ).getDataXML( rowData[ i ] ) );
+      }
+    } finally {
+      lock.readLock().unlock();
     }
 
     xml.append( "</" ).append( XML_DATA_TAG ).append( ">" );
@@ -1077,21 +1190,107 @@ public class RowMeta implements RowMetaInterface {
   /**
    * Convert an XML node into binary data using the row metadata supplied.
    *
-   * @param node
-   *          The data row node
-   * @throws IOException
-   *           Thrown in case there is an (Base64/GZip) decoding problem
+   * @param node The data row node
    * @return a row of data, converted from XML
+   * @throws IOException Thrown in case there is an (Base64/GZip) decoding problem
    */
   @Override
   public Object[] getRow( Node node ) throws KettleException {
-    Object[] rowData = RowDataUtil.allocateRowData( size() );
+    lock.readLock().lock();
+    try {
+      Object[] rowData = RowDataUtil.allocateRowData( size() );
 
-    for ( int i = 0; i < size(); i++ ) {
-      Node valueDataNode = XMLHandler.getSubNodeByNr( node, ValueMeta.XML_DATA_TAG, i );
-      rowData[i] = getValueMeta( i ).getValue( valueDataNode );
+      for ( int i = 0; i < size(); i++ ) {
+        Node valueDataNode = XMLHandler.getSubNodeByNr( node, ValueMeta.XML_DATA_TAG, i );
+        rowData[ i ] = getValueMeta( i ).getValue( valueDataNode );
+      }
+      return rowData;
+    } finally {
+      lock.readLock().unlock();
     }
-    return rowData;
   }
 
+  @VisibleForTesting
+  static class RowMetaCache {
+    @VisibleForTesting
+    final Map<String, Integer> mapping;
+    @VisibleForTesting
+    List<Integer> needRealClone;
+
+    RowMetaCache() {
+      this( new HashMap<String, Integer>(), null );
+    }
+
+    /**
+     * Copy constructor for clone
+     *
+     * @param rowMetaCache
+     */
+    RowMetaCache( RowMetaCache rowMetaCache ) {
+      this( new HashMap<>( rowMetaCache.mapping ), rowMetaCache.needRealClone == null ? null
+        : new ArrayList<>( rowMetaCache.needRealClone ) );
+    }
+
+    RowMetaCache( Map<String, Integer> mapping, List<Integer> needRealClone ) {
+      this.mapping = mapping;
+      this.needRealClone = needRealClone;
+    }
+
+    synchronized void invalidate() {
+      mapping.clear();
+      needRealClone = null;
+    }
+
+    void storeMapping( String name, int index ) {
+      if ( Const.isEmpty( name ) ) {
+        return;
+      }
+
+      synchronized ( this ) {
+        mapping.put( name.toLowerCase(), index );
+        needRealClone = null;
+      }
+    }
+
+    synchronized void replaceMapping( String old, String current, int index ) {
+      if ( !Const.isEmpty( old ) ) {
+        mapping.remove( old.toLowerCase() );
+      }
+      storeMapping( current, index );
+    }
+
+    Integer findAndCompare( String name, List<? extends ValueMetaInterface> metas ) {
+      if ( Const.isEmpty( name ) ) {
+        return null;
+      }
+
+      synchronized ( this ) {
+        name = name.toLowerCase();
+        Integer index = mapping.get( name );
+        if ( index != null ) {
+          ValueMetaInterface value = metas.get( index );
+          if ( !name.equalsIgnoreCase( value.getName() ) ) {
+            mapping.remove( name );
+            index = null;
+          }
+        }
+        return index;
+      }
+    }
+
+    synchronized List<Integer> getOrCreateValuesThatNeedRealClone( List<ValueMetaInterface> values ) {
+      if ( needRealClone == null ) {
+        int len = values.size();
+        needRealClone = new ArrayList<Integer>( len );
+        for ( int i = 0; i < len; i++ ) {
+          ValueMetaInterface valueMeta = values.get( i );
+          if ( valueMeta.requiresRealClone() ) {
+            needRealClone.add( i );
+          }
+        }
+      }
+      return needRealClone;
+    }
+  }
 }
+

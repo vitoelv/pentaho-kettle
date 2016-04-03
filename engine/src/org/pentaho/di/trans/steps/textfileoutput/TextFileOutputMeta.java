@@ -27,7 +27,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -35,6 +35,9 @@ import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.exception.KettleXMLException;
+import org.pentaho.di.core.injection.Injection;
+import org.pentaho.di.core.injection.InjectionDeep;
+import org.pentaho.di.core.injection.InjectionSupported;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
@@ -53,7 +56,6 @@ import org.pentaho.di.trans.step.StepDataInterface;
 import org.pentaho.di.trans.step.StepInjectionMetaEntry;
 import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
-import org.pentaho.di.trans.step.StepMetaInjectionInterface;
 import org.pentaho.di.trans.step.StepMetaInterface;
 import org.pentaho.metastore.api.IMetaStore;
 import org.w3c.dom.Node;
@@ -62,6 +64,7 @@ import org.w3c.dom.Node;
  * Created on 4-apr-2003
  *
  */
+@InjectionSupported( localizationPrefix = "TextFileOutput.Injection.", groups = { "OUTPUT_FIELDS" } )
 public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterface {
   private static Class<?> PKG = TextFileOutputMeta.class; // for i18n purposes, needed by Translator2!!
 
@@ -74,99 +77,130 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
   public static final String[] formatMapperLineTerminator = new String[] { "DOS", "UNIX", "CR", "None" };
 
   /** The base name of the output file */
+  @Injection( name = "FILENAME" )
   private String fileName;
 
   /** Whether to treat this as a command to be executed and piped into */
+  @Injection( name = "RUN_AS_COMMAND" )
   private boolean fileAsCommand;
 
   /** Whether to push the output into the output of a servlet with the executeTrans Carte/DI-Server servlet */
+  @Injection( name = "PASS_TO_SERVLET" )
   private boolean servletOutput;
 
   /** Flag: create parent folder, default to true */
+  @Injection( name = "CREATE_PARENT_FOLDER" )
   private boolean createparentfolder = true;
 
   /** The file extention in case of a generated filename */
+  @Injection( name = "EXTENSION" )
   private String extension;
 
   /** The separator to choose for the CSV file */
+  @Injection( name = "SEPARATOR" )
   private String separator;
 
   /** The enclosure to use in case the separator is part of a field's value */
+  @Injection( name = "ENCLOSURE" )
   private String enclosure;
 
   /** Setting to allow the enclosure to be always surrounding a String value, even when there is no separator inside */
+  @Injection( name = "FORCE_ENCLOSURE" )
   private boolean enclosureForced;
 
   /**
    * Setting to allow for backwards compatibility where the enclosure did not show up at all if Force Enclosure was not
    * checked
    */
+  @Injection( name = "DISABLE_ENCLOSURE_FIX" )
   private boolean disableEnclosureFix;
 
   /** Add a header at the top of the file? */
+  @Injection( name = "HEADER" )
   private boolean headerEnabled;
 
   /** Add a footer at the bottom of the file? */
+  @Injection( name = "FOOTER" )
   private boolean footerEnabled;
 
   /** The file format: DOS or Unix */
+  @Injection( name = "FORMAT" )
   private String fileFormat;
 
   /** The file compression: None, Zip or Gzip */
+  @Injection( name = "COMPRESSION" )
   private String fileCompression;
 
   /** if this value is larger then 0, the text file is split up into parts of this number of lines */
+  @Injection( name = "SPLIT_EVERY" )
   private int splitEvery;
 
   /** Flag to indicate the we want to append to the end of an existing file (if it exists) */
+  @Injection( name = "APPEND" )
   private boolean fileAppended;
 
   /** Flag: add the stepnr in the filename */
+  @Injection( name = "INC_STEPNR_IN_FILENAME" )
   private boolean stepNrInFilename;
 
   /** Flag: add the partition number in the filename */
+  @Injection( name = "INC_PARTNR_IN_FILENAME" )
   private boolean partNrInFilename;
 
   /** Flag: add the date in the filename */
+  @Injection( name = "INC_DATE_IN_FILENAME" )
   private boolean dateInFilename;
 
   /** Flag: add the time in the filename */
+  @Injection( name = "INC_TIME_IN_FILENAME" )
   private boolean timeInFilename;
 
   /** Flag: pad fields to their specified length */
+  @Injection( name = "RIGHT_PAD_FIELDS" )
   private boolean padded;
 
   /** Flag: Fast dump data without field formatting */
+  @Injection( name = "FAST_DATA_DUMP" )
   private boolean fastDump;
 
   /* THE FIELD SPECIFICATIONS ... */
 
   /** The output fields */
+  @InjectionDeep
   private TextFileField[] outputFields;
 
   /** The encoding to use for reading: null or empty string means system default encoding */
+  @Injection( name = "ENCODING" )
   private String encoding;
 
   /** The string to use for append to end line of the whole file: null or empty string means no line needed */
+  @Injection( name = "ADD_ENDING_LINE" )
   private String endedLine;
 
   /* Specification if file name is in field */
 
+  @Injection( name = "FILENAME_IN_FIELD" )
   private boolean fileNameInField;
 
+  @Injection( name = "FILENAME_FIELD" )
   private String fileNameField;
 
   /** Calculated value ... */
+  @Injection( name = "NEW_LINE" )
   private String newline;
 
   /** Flag: add the filenames to result filenames */
+  @Injection( name = "ADD_TO_RESULT" )
   private boolean addToResultFilenames;
 
   /** Flag : Do not open new file when transformation start */
+  @Injection( name = "DO_NOT_CREATE_FILE_AT_STARTUP" )
   private boolean doNotOpenNewFileInit;
 
+  @Injection( name = "SPECIFY_DATE_FORMAT" )
   private boolean specifyingFormat;
 
+  @Injection( name = "DATE_FORMAT" )
   private String dateTimeFormat;
 
   public TextFileOutputMeta() {
@@ -474,6 +508,13 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
   }
 
   /**
+   * @return <tt>1</tt> if <tt>isFooterEnabled()</tt> and <tt>0</tt> otherwise
+   */
+  public int getFooterShift() {
+    return isFooterEnabled() ? 1 : 0;
+  }
+
+  /**
    * @param splitEvery
    *          The splitEvery to set.
    */
@@ -618,7 +659,7 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
   }
 
   public void loadXML( Node stepnode, List<DatabaseMeta> databases, IMetaStore metaStore ) throws KettleXMLException {
-    readData( stepnode );
+    readData( stepnode, metaStore );
   }
 
   public void allocate( int nrfields ) {
@@ -638,7 +679,7 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
     return retval;
   }
 
-  public void readData( Node stepnode ) throws KettleXMLException {
+  private void readData( Node stepnode, IMetaStore metastore ) throws KettleXMLException {
     try {
       separator = XMLHandler.getTagValue( stepnode, "separator" );
       if ( separator == null ) {
@@ -683,7 +724,7 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
         endedLine = "";
       }
 
-      fileName = XMLHandler.getTagValue( stepnode, "file", "name" );
+      fileName = loadSource( stepnode, metastore );
       fileAsCommand = "Y".equalsIgnoreCase( XMLHandler.getTagValue( stepnode, "file", "is_command" ) );
       servletOutput = "Y".equalsIgnoreCase( XMLHandler.getTagValue( stepnode, "file", "servlet_output" ) );
       doNotOpenNewFileInit =
@@ -736,6 +777,10 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
     } catch ( Exception e ) {
       throw new KettleXMLException( "Unable to load step info from XML", e );
     }
+  }
+
+  public void readData( Node stepnode ) throws KettleXMLException {
+    readData( stepnode, null );
   }
 
   public String getNewLine( String fformat ) {
@@ -960,7 +1005,7 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
     retval.append( "    " + XMLHandler.addTagValue( "fileNameField", fileNameField ) );
     retval.append( "    " + XMLHandler.addTagValue( "create_parent_folder", createparentfolder ) );
     retval.append( "    <file>" ).append( Const.CR );
-    retval.append( "      " ).append( XMLHandler.addTagValue( "name", fileName ) );
+    saveSource( retval, fileName );
     retval.append( "      " ).append( XMLHandler.addTagValue( "is_command", fileAsCommand ) );
     retval.append( "      " ).append( XMLHandler.addTagValue( "servlet_output", servletOutput ) );
     retval.append( "      " ).append( XMLHandler.addTagValue( "do_not_open_new_file_init", doNotOpenNewFileInit ) );
@@ -1003,7 +1048,8 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
     return retval.toString();
   }
 
-  public void readRep( Repository rep, IMetaStore metaStore, ObjectId id_step, List<DatabaseMeta> databases ) throws KettleException {
+  public void readRep( Repository rep, IMetaStore metaStore, ObjectId id_step, List<DatabaseMeta> databases )
+    throws KettleException {
     try {
       separator = rep.getStepAttributeString( id_step, "separator" );
       enclosure = rep.getStepAttributeString( id_step, "enclosure" );
@@ -1025,7 +1071,7 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
       }
       encoding = rep.getStepAttributeString( id_step, "encoding" );
 
-      fileName = rep.getStepAttributeString( id_step, "file_name" );
+      fileName = loadSourceRep( rep, id_step );
       fileAsCommand = rep.getStepAttributeBoolean( id_step, "file_is_command" );
       servletOutput = rep.getStepAttributeBoolean( id_step, "file_servlet_output" );
       doNotOpenNewFileInit = rep.getStepAttributeBoolean( id_step, "do_not_open_new_file_init" );
@@ -1077,7 +1123,8 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
     }
   }
 
-  public void saveRep( Repository rep, IMetaStore metaStore, ObjectId id_transformation, ObjectId id_step ) throws KettleException {
+  public void saveRep( Repository rep, IMetaStore metaStore, ObjectId id_transformation, ObjectId id_step )
+    throws KettleException {
     try {
       rep.saveStepAttribute( id_transformation, id_step, "separator", separator );
       rep.saveStepAttribute( id_transformation, id_step, "enclosure", enclosure );
@@ -1088,7 +1135,7 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
       rep.saveStepAttribute( id_transformation, id_step, "format", fileFormat );
       rep.saveStepAttribute( id_transformation, id_step, "compression", fileCompression );
       rep.saveStepAttribute( id_transformation, id_step, "encoding", encoding );
-      rep.saveStepAttribute( id_transformation, id_step, "file_name", fileName );
+      saveSourceRep( rep, id_transformation, id_step, fileName );
       rep.saveStepAttribute( id_transformation, id_step, "file_is_command", fileAsCommand );
       rep.saveStepAttribute( id_transformation, id_step, "file_servlet_output", servletOutput );
       rep.saveStepAttribute( id_transformation, id_step, "do_not_open_new_file_init", doNotOpenNewFileInit );
@@ -1195,7 +1242,7 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
   /**
    * Since the exported transformation that runs this will reside in a ZIP file, we can't reference files relatively. So
    * what this does is turn the name of the base path into an absolute path.
-   * 
+   *
    * @param space
    *          the variable space to use
    * @param definitions
@@ -1204,11 +1251,12 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
    *          The repository to optionally load other resources from (to be converted to XML)
    * @param metaStore
    *          the metaStore in which non-kettle metadata could reside.
-   * 
+   *
    * @return the filename of the exported resource
    */
   public String exportResources( VariableSpace space, Map<String, ResourceDefinition> definitions,
-      ResourceNamingInterface resourceNamingInterface, Repository repository, IMetaStore metaStore ) throws KettleException {
+      ResourceNamingInterface resourceNamingInterface, Repository repository, IMetaStore metaStore )
+    throws KettleException {
     try {
       // The object that we're modifying here is a copy of the original!
       // So let's change the filename from relative to absolute by grabbing the file object...
@@ -1232,12 +1280,24 @@ public class TextFileOutputMeta extends BaseStepMeta implements StepMetaInterfac
     this.fileName = fileName;
   }
 
-  @Override
-  public StepMetaInjectionInterface getStepMetaInjectionInterface() {
-    return new TextFileOutputMetaInjection( this );
-  }
-
   public List<StepInjectionMetaEntry> extractStepMetadataEntries() throws KettleException {
     return getStepMetaInjectionInterface().extractStepMetadataEntries();
+  }
+
+  protected String loadSource( Node stepnode, IMetaStore metastore ) {
+    return XMLHandler.getTagValue( stepnode, "file", "name" );
+  }
+
+  protected void saveSource( StringBuffer retVal, String value ) {
+    retVal.append( "      " ).append( XMLHandler.addTagValue( "name", fileName ) );
+  }
+
+  protected String loadSourceRep( Repository rep, ObjectId id_step ) throws KettleException {
+    return rep.getStepAttributeString( id_step, "file_name" );
+  }
+
+  protected void saveSourceRep( Repository rep, ObjectId id_transformation, ObjectId id_step, String value )
+    throws KettleException {
+    rep.saveStepAttribute( id_transformation, id_step, "file_name", fileName );
   }
 }

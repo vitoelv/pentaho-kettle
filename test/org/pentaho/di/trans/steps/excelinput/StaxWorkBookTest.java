@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -19,21 +19,129 @@
  * limitations under the License.
  *
  ******************************************************************************/
-
 package org.pentaho.di.trans.steps.excelinput;
 
+import static org.junit.Assert.*;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.util.Date;
 
-import junit.framework.TestCase;
-
+import org.apache.commons.io.FileUtils;
+import org.junit.Test;
+import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.spreadsheet.KCell;
 import org.pentaho.di.core.spreadsheet.KCellType;
 import org.pentaho.di.core.spreadsheet.KSheet;
 import org.pentaho.di.core.spreadsheet.KWorkbook;
 
-public class StaxWorkBookTest extends TestCase {
+public class StaxWorkBookTest {
+
+  @Test
+  public void testReadData() throws KettleException {
+    readData();
+  }
+
+  @Test
+  public void testFileDoesNotChange() throws KettleException, IOException {
+    File fileBeforeRead = new File( "testfiles/sample-file.xlsx" );
+    readData();
+    File fileAfterRead = new File( "testfiles/sample-file.xlsx" );
+    assertTrue( FileUtils.contentEquals(fileBeforeRead, fileAfterRead ) );
+  }
+
+  @Test
   public void testRead() throws Exception {
-    KWorkbook workbook = WorkbookFactory.getWorkbook( SpreadSheetType.SAX_POI, "testfiles/sample-file.xlsx", null );
+    FileLock lock = null;
+    RandomAccessFile randomAccessFile = null;
+    try {
+      readData();
+      File fileAfterRead = new File( "testfiles/sample-file.xlsx" );
+      randomAccessFile = new RandomAccessFile( fileAfterRead, "rw" );
+      FileChannel fileChannel = randomAccessFile.getChannel();
+      lock = fileChannel.tryLock();
+      // check that we could lock file
+      assertTrue( lock.isValid() );
+    } finally {
+      if ( lock != null ) {
+        lock.release();
+      }
+      if ( randomAccessFile != null ) {
+        randomAccessFile.close();
+      }
+    }
+  }
+
+  @Test
+  public void testEmptySheet() throws Exception {
+    KWorkbook workbook = getWorkbook( "testfiles/sample-file.xlsx", null );
+    int numberOfSheets = workbook.getNumberOfSheets();
+    assertEquals( 3, numberOfSheets );
+    // last two sheets are empty, check if no exception opening
+    for ( int i = 1; i< numberOfSheets; i++ ) {
+      KSheet sheet = workbook.getSheet( i );
+      for ( int j = 0; j < sheet.getRows(); j++ ) {
+        sheet.getRow( j );
+      }
+    }
+  }
+
+  @Test
+  public void testReadSameRow() throws Exception {
+    KWorkbook workbook = getWorkbook( "testfiles/sample-file.xlsx", null );
+    KSheet sheet1 = workbook.getSheet( 0 );
+    KCell[] row = sheet1.getRow( 3 );
+    assertEquals( "Two", row[1].getValue() );
+    row = sheet1.getRow( 3 );
+    assertEquals( "Two", row[1].getValue() );
+  }
+
+  @Test
+  public void testReadRowRA() throws Exception {
+    KWorkbook workbook = getWorkbook( "testfiles/sample-file.xlsx", null );
+    KSheet sheet1 = workbook.getSheet( 0 );
+    KCell[] row = sheet1.getRow( 4 );
+    assertEquals( "Three", row[1].getValue() );
+    row = sheet1.getRow( 2 );
+    assertEquals( "One", row[1].getValue() );
+  }
+
+
+  @Test
+  public void testReadEmptyRow() throws Exception {
+    KWorkbook workbook = getWorkbook( "testfiles/sample-file.xlsx", null );
+    KSheet sheet1 = workbook.getSheet( 0 );
+    KCell[] row = sheet1.getRow( 0 );
+    assertEquals( 0, row.length );
+  }
+
+  @Test
+  public void testReadCells() throws Exception {
+    KWorkbook workbook = getWorkbook( "testfiles/sample-file.xlsx", null );
+    KSheet sheet = workbook.getSheet( 0 );
+
+    KCell cell = sheet.getCell( 1, 2 );
+    assertEquals( "One", cell.getValue() );
+    assertEquals( KCellType.LABEL, cell.getType() );
+
+    cell = sheet.getCell( 2, 2 );
+    assertEquals( KCellType.DATE, cell.getType() );
+    assertEquals( new Date( 1283817600000L ), cell.getValue() );
+
+    cell = sheet.getCell( 1, 3 );
+    assertEquals( "Two", cell.getValue() );
+    assertEquals( KCellType.LABEL, cell.getType() );
+  }
+
+  protected KWorkbook getWorkbook( String file, String encoding ) throws KettleException {
+    return WorkbookFactory.getWorkbook( SpreadSheetType.SAX_POI, file, encoding );
+  }
+
+  private void readData() throws KettleException {
+    KWorkbook workbook = getWorkbook( "testfiles/sample-file.xlsx", null );
     int numberOfSheets = workbook.getNumberOfSheets();
     assertEquals( 3, numberOfSheets );
     KSheet sheet1 = workbook.getSheet( 0 );
@@ -44,13 +152,13 @@ public class StaxWorkBookTest extends TestCase {
     assertEquals( 5, sheet1.getRows() );
 
     KCell[] row = sheet1.getRow( 2 );
-    assertEquals( KCellType.STRING_FORMULA, row[1].getType() );
+    assertEquals( KCellType.LABEL, row[1].getType() );
     assertEquals( "One", row[1].getValue() );
     assertEquals( KCellType.DATE, row[2].getType() );
     assertEquals( new Date( 1283817600000L ), row[2].getValue() );
-    assertEquals( KCellType.STRING_FORMULA, row[3].getType() );
-    assertEquals( "75", row[3].getValue() );
-    assertEquals( KCellType.STRING_FORMULA, row[4].getType() );
+    assertEquals( KCellType.NUMBER, row[3].getType() );
+    assertEquals( Double.valueOf( "75" ), row[3].getValue() );
+    assertEquals( KCellType.BOOLEAN, row[4].getType() );
     assertEquals( Boolean.valueOf( true ), row[4].getValue() );
     assertEquals( KCellType.NUMBER_FORMULA, row[5].getType() );
     assertEquals( Double.valueOf( "75" ), row[5].getValue() );
@@ -80,12 +188,11 @@ public class StaxWorkBookTest extends TestCase {
     assertEquals( Double.valueOf( "210" ), row[5].getValue() );
 
     try {
-      sheet1.getRow( 5 );
-      throw new Exception( "No out of bounds exception thrown when expected" );
+      row = sheet1.getRow( 5 );
+      fail( "No out of bounds exception thrown when expected" );
     } catch ( ArrayIndexOutOfBoundsException e ) {
       // OK!
     }
-
-    workbook.close();
   }
+
 }

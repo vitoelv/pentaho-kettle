@@ -22,6 +22,8 @@
 
 package org.pentaho.di.core.jdbc;
 
+import org.pentaho.di.core.KettleClientEnvironment;
+
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
@@ -29,10 +31,16 @@ import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.util.Properties;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import org.pentaho.di.core.KettleClientEnvironment;
-
+/**
+ * @deprecated As of release 6.0, use org.pentaho.di.trans.dataservice.jdbc.ThinDriver instead
+ *
+ * Data Service client code is now available in the pdi-dataservice-plugin project
+ *
+ */
+@Deprecated
 public class ThinDriver implements Driver {
 
   public static final String BASE_URL = "jdbc:pdi://";
@@ -59,6 +67,11 @@ public class ThinDriver implements Driver {
   public Connection connect( String url, Properties properties ) throws SQLException {
     String username = properties.getProperty( "user" );
     String password = properties.getProperty( "password" );
+
+    Logger.getLogger( getClass().getName() ).log( Level.WARNING,
+      getClass().getName() + " has been deprecated and is scheduled for removal in 6.1. "
+        + "Please use org.pentaho.di.trans.dataservice.jdbc.ThinDriver instead."
+    );
 
     if ( acceptsURL( url ) ) {
       ThinConnection connection = new ThinConnection( url, username, password );

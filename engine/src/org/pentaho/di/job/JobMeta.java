@@ -23,17 +23,10 @@
 
 package org.pentaho.di.job;
 
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import org.apache.commons.vfs.FileName;
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileSystemException;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.vfs2.FileName;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileSystemException;
 import org.pentaho.di.base.AbstractMeta;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResultInterface;
@@ -46,10 +39,12 @@ import org.pentaho.di.core.SQLStatement;
 import org.pentaho.di.core.attributes.AttributesUtil;
 import org.pentaho.di.core.database.Database;
 import org.pentaho.di.core.database.DatabaseMeta;
+import org.pentaho.di.core.exception.IdNotFoundException;
 import org.pentaho.di.core.exception.KettleDatabaseException;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleFileException;
 import org.pentaho.di.core.exception.KettleXMLException;
+import org.pentaho.di.core.exception.LookupReferencesException;
 import org.pentaho.di.core.extension.ExtensionPointHandler;
 import org.pentaho.di.core.extension.KettleExtensionPoint;
 import org.pentaho.di.core.gui.OverwritePrompter;
@@ -78,6 +73,7 @@ import org.pentaho.di.core.vfs.KettleVFS;
 import org.pentaho.di.core.xml.XMLHandler;
 import org.pentaho.di.core.xml.XMLInterface;
 import org.pentaho.di.i18n.BaseMessages;
+import org.pentaho.di.job.entries.missing.MissingEntry;
 import org.pentaho.di.job.entries.special.JobEntrySpecial;
 import org.pentaho.di.job.entry.JobEntryCopy;
 import org.pentaho.di.job.entry.JobEntryInterface;
@@ -97,6 +93,15 @@ import org.pentaho.metastore.api.exceptions.MetaStoreException;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 /**
  * The definition of a PDI job is represented by a JobMeta object. It is typically loaded from a .kjb file, a PDI
  * repository, or it is generated dynamically. The declared parameters of the job definition are then queried using
@@ -105,10 +110,10 @@ import org.w3c.dom.Node;
  *
  * @author Matt
  * @since 11-08-2003
- *
  */
-public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMeta>, XMLInterface,
-  ResourceExportInterface, RepositoryElementInterface, LoggingObjectInterface {
+public class JobMeta extends AbstractMeta
+    implements Cloneable, Comparable<JobMeta>, XMLInterface, ResourceExportInterface, RepositoryElementInterface,
+    LoggingObjectInterface {
 
   private static Class<?> PKG = JobMeta.class; // for i18n purposes, needed by Translator2!!
 
@@ -116,7 +121,9 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
 
   protected static final String XML_TAG_SLAVESERVERS = "slaveservers";
 
-  /** A constant specifying the repository element type as a Job. */
+  /**
+   * A constant specifying the repository element type as a Job.
+   */
   public static final RepositoryObjectType REPOSITORY_ELEMENT_TYPE = RepositoryObjectType.JOB;
 
   protected String jobVersion;
@@ -137,20 +144,35 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
 
   protected List<LogTableInterface> extraLogTables;
 
-  /** Constant = "SPECIAL" **/
+  /**
+   * Constant = "SPECIAL"
+   **/
   public static final String STRING_SPECIAL = "SPECIAL";
 
-  /** Constant = "START" **/
+  /**
+   * Constant = "START"
+   **/
   public static final String STRING_SPECIAL_START = "START";
 
-  /** Constant = "DUMMY" **/
+  /**
+   * Constant = "DUMMY"
+   **/
   public static final String STRING_SPECIAL_DUMMY = "DUMMY";
 
-  /** Constant = "OK" **/
+  /**
+   * Constant = "OK"
+   **/
   public static final String STRING_SPECIAL_OK = "OK";
 
-  /** Constant = "ERROR" **/
+  /**
+   * Constant = "ERROR"
+   **/
   public static final String STRING_SPECIAL_ERROR = "ERROR";
+
+  /**
+   * The loop cache.
+   */
+  protected Map<String, Boolean> loopCache;
 
   /**
    * List of booleans indicating whether or not to remember the size and position of the different windows...
@@ -161,9 +183,10 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
 
   protected static final String XML_TAG_PARAMETERS = "parameters";
 
+  private List<MissingEntry> missingEntries;
+
   /**
    * Instantiates a new job meta.
-   *
    */
   public JobMeta() {
     clear();
@@ -185,8 +208,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
     List<PluginInterface> plugins = PluginRegistry.getInstance().getPlugins( LogTablePluginType.class );
     for ( PluginInterface plugin : plugins ) {
       try {
-        LogTablePluginInterface logTablePluginInterface =
-          (LogTablePluginInterface) PluginRegistry.getInstance().loadClass( plugin );
+        LogTablePluginInterface logTablePluginInterface = (LogTablePluginInterface) PluginRegistry.getInstance()
+            .loadClass( plugin );
         if ( logTablePluginInterface.getType() == TableType.JOB ) {
           logTablePluginInterface.setContext( this, this );
           extraLogTables.add( logTablePluginInterface );
@@ -199,6 +222,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
     arguments = null;
 
     super.clear();
+    loopCache = new HashMap<String, Boolean>();
     addDefaults();
     jobStatus = -1;
     jobVersion = null;
@@ -330,8 +354,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Compares this job's meta-data to the specified job's meta-data. This method simply calls compare(this, o)
    *
-   * @param o
-   *          the o
+   * @param o the o
    * @return the int
    * @see #compare(JobMeta, JobMeta)
    * @see java.lang.Comparable#compareTo(java.lang.Object)
@@ -345,8 +368,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
    * instance of JobMeta, false is returned. Otherwise the method returns whether a call to compare() indicates equality
    * (i.e. compare(this, (JobMeta)obj)==0).
    *
-   * @param obj
-   *          the obj
+   * @param obj the obj
    * @return true, if successful
    * @see #compare(JobMeta, JobMeta)
    * @see java.lang.Object#equals(java.lang.Object)
@@ -374,8 +396,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
    * doClear parameter is true, the clone will be cleared of ALL values before the copy. If false, only the copied
    * fields will be cleared.
    *
-   * @param doClear
-   *          Whether to clear all of the clone's data before copying from the source object
+   * @param doClear Whether to clear all of the clone's data before copying from the source object
    * @return a real clone of the calling object
    */
   public Object realClone( boolean doClear ) {
@@ -428,8 +449,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Sets the job log table.
    *
-   * @param jobLogTable
-   *          the new job log table
+   * @param jobLogTable the new job log table
    */
   public void setJobLogTable( JobLogTable jobLogTable ) {
     this.jobLogTable = jobLogTable;
@@ -437,7 +457,6 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
 
   /**
    * Clears the different changed flags of the job.
-   *
    */
   @Override
   public void clearChanged() {
@@ -499,8 +518,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
    * This method asks all steps in the transformation whether or not the specified database connection is used. The
    * connection is used in the transformation if any of the steps uses it or if it is being used to log to.
    *
-   * @param databaseMeta
-   *          The connection to check
+   * @param databaseMeta The connection to check
    * @return true if the connection is used in this transformation.
    */
   public boolean isDatabaseConnectionUsed( DatabaseMeta databaseMeta ) {
@@ -571,14 +589,12 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
       retval.append( "    " ).append( XMLHandler.addTagValue( "job_status", jobStatus ) );
     }
 
-    retval.append( "  " ).append( XMLHandler.addTagValue( "directory", ( directory != null ? directory.getPath()
-      : RepositoryDirectory.DIRECTORY_SEPARATOR ) ) );
+    retval.append( "  " ).append( XMLHandler.addTagValue( "directory",
+        ( directory != null ? directory.getPath() : RepositoryDirectory.DIRECTORY_SEPARATOR ) ) );
     retval.append( "  " ).append( XMLHandler.addTagValue( "created_user", createdUser ) );
-    retval
-      .append( "  " ).append( XMLHandler.addTagValue( "created_date", XMLHandler.date2string( createdDate ) ) );
+    retval.append( "  " ).append( XMLHandler.addTagValue( "created_date", XMLHandler.date2string( createdDate ) ) );
     retval.append( "  " ).append( XMLHandler.addTagValue( "modified_user", modifiedUser ) );
-    retval
-      .append( "  " ).append( XMLHandler.addTagValue( "modified_date", XMLHandler.date2string( modifiedDate ) ) );
+    retval.append( "  " ).append( XMLHandler.addTagValue( "modified_date", XMLHandler.date2string( modifiedDate ) ) );
 
     retval.append( "    " ).append( XMLHandler.openTag( XML_TAG_PARAMETERS ) ).append( Const.CR );
     String[] parameters = listParameters();
@@ -586,10 +602,10 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
       retval.append( "        " ).append( XMLHandler.openTag( "parameter" ) ).append( Const.CR );
       retval.append( "            " ).append( XMLHandler.addTagValue( "name", parameters[idx] ) );
       try {
-        retval.append( "            " ).append(
-          XMLHandler.addTagValue( "default_value", getParameterDefault( parameters[idx] ) ) );
-        retval.append( "            " ).append(
-          XMLHandler.addTagValue( "description", getParameterDescription( parameters[idx] ) ) );
+        retval.append( "            " )
+            .append( XMLHandler.addTagValue( "default_value", getParameterDefault( parameters[idx] ) ) );
+        retval.append( "            " )
+            .append( XMLHandler.addTagValue( "description", getParameterDescription( parameters[idx] ) ) );
       } catch ( UnknownParamException e ) {
         // skip the default value and/or description. This exception should never happen because we use listParameters()
         // above.
@@ -663,12 +679,9 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Instantiates a new job meta.
    *
-   * @param fname
-   *          the fname
-   * @param rep
-   *          the rep
-   * @throws KettleXMLException
-   *           the kettle xml exception
+   * @param fname the fname
+   * @param rep   the rep
+   * @throws KettleXMLException the kettle xml exception
    */
   public JobMeta( String fname, Repository rep ) throws KettleXMLException {
     this( null, fname, rep, null );
@@ -677,14 +690,10 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Instantiates a new job meta.
    *
-   * @param fname
-   *          the fname
-   * @param rep
-   *          the rep
-   * @param prompter
-   *          the prompter
-   * @throws KettleXMLException
-   *           the kettle xml exception
+   * @param fname    the fname
+   * @param rep      the rep
+   * @param prompter the prompter
+   * @throws KettleXMLException the kettle xml exception
    */
   public JobMeta( String fname, Repository rep, OverwritePrompter prompter ) throws KettleXMLException {
     this( null, fname, rep, prompter );
@@ -693,32 +702,25 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Load the job from the XML file specified.
    *
-   * @param log
-   *          the logging channel
-   * @param fname
-   *          The filename to load as a job
-   * @param rep
-   *          The repository to bind againt, null if there is no repository available.
+   * @param fname The filename to load as a job
+   * @param rep   The repository to bind againt, null if there is no repository available.
    * @throws KettleXMLException
    */
   @Deprecated
-  public JobMeta( VariableSpace parentSpace, String fname, Repository rep, OverwritePrompter prompter ) throws KettleXMLException {
+  public JobMeta( VariableSpace parentSpace, String fname, Repository rep, OverwritePrompter prompter )
+      throws KettleXMLException {
     this( parentSpace, fname, rep, null, prompter );
   }
 
   /**
    * Load the job from the XML file specified.
    *
-   * @param log
-   *          the logging channel
-   * @param fname
-   *          The filename to load as a job
-   * @param rep
-   *          The repository to bind againt, null if there is no repository available.
+   * @param fname The filename to load as a job
+   * @param rep   The repository to bind againt, null if there is no repository available.
    * @throws KettleXMLException
    */
   public JobMeta( VariableSpace parentSpace, String fname, Repository rep, IMetaStore metaStore,
-    OverwritePrompter prompter ) throws KettleXMLException {
+      OverwritePrompter prompter ) throws KettleXMLException {
     this.initializeVariablesFrom( parentSpace );
     this.metaStore = metaStore;
     try {
@@ -728,30 +730,27 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         // The jobnode
         Node jobnode = XMLHandler.getSubNode( doc, XML_TAG );
 
-        loadXML( jobnode, fname, rep, prompter );
+        loadXML( jobnode, fname, rep, metaStore, false, prompter );
       } else {
-        throw new KettleXMLException( BaseMessages.getString( PKG, "JobMeta.Exception.ErrorReadingFromXMLFile" )
-          + fname );
+        throw new KettleXMLException(
+            BaseMessages.getString( PKG, "JobMeta.Exception.ErrorReadingFromXMLFile" ) + fname );
       }
     } catch ( Exception e ) {
-      throw new KettleXMLException( BaseMessages.getString( PKG, "JobMeta.Exception.UnableToLoadJobFromXMLFile" )
-        + fname + "]", e );
+      throw new KettleXMLException(
+          BaseMessages.getString( PKG, "JobMeta.Exception.UnableToLoadJobFromXMLFile" ) + fname + "]", e );
     }
   }
 
   /**
    * Instantiates a new job meta.
    *
-   * @param inputStream
-   *          the input stream
-   * @param rep
-   *          the rep
-   * @param prompter
-   *          the prompter
-   * @throws KettleXMLException
-   *           the kettle xml exception
+   * @param inputStream the input stream
+   * @param rep         the rep
+   * @param prompter    the prompter
+   * @throws KettleXMLException the kettle xml exception
    */
   public JobMeta( InputStream inputStream, Repository rep, OverwritePrompter prompter ) throws KettleXMLException {
+    this();
     Document doc = XMLHandler.loadXMLFile( inputStream, null, false, false );
     loadXML( XMLHandler.getSubNode( doc, JobMeta.XML_TAG ), rep, prompter );
   }
@@ -759,32 +758,28 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Create a new JobMeta object by loading it from a a DOM node.
    *
-   * @param jobnode
-   *          The node to load from
-   * @param rep
-   *          The reference to a repository to load additional information from
-   * @param prompter
-   *          The prompter to use in case a shared object gets overwritten
+   * @param jobnode  The node to load from
+   * @param rep      The reference to a repository to load additional information from
+   * @param prompter The prompter to use in case a shared object gets overwritten
    * @throws KettleXMLException
    */
   public JobMeta( Node jobnode, Repository rep, OverwritePrompter prompter ) throws KettleXMLException {
+    this();
     loadXML( jobnode, rep, false, prompter );
   }
 
   /**
    * Create a new JobMeta object by loading it from a a DOM node.
    *
-   * @param jobnode
-   *          The node to load from
-   * @param rep
-   *          The reference to a repository to load additional information from
-   * @param ignoreRepositorySharedObjects
-   *          Do not load shared objects, handled separately
-   * @param prompter
-   *          The prompter to use in case a shared object gets overwritten
+   * @param jobnode                       The node to load from
+   * @param rep                           The reference to a repository to load additional information from
+   * @param ignoreRepositorySharedObjects Do not load shared objects, handled separately
+   * @param prompter                      The prompter to use in case a shared object gets overwritten
    * @throws KettleXMLException
    */
-  public JobMeta( Node jobnode, Repository rep, boolean ignoreRepositorySharedObjects, OverwritePrompter prompter ) throws KettleXMLException {
+  public JobMeta( Node jobnode, Repository rep, boolean ignoreRepositorySharedObjects, OverwritePrompter prompter )
+      throws KettleXMLException {
+    this();
     loadXML( jobnode, rep, ignoreRepositorySharedObjects, prompter );
   }
 
@@ -809,10 +804,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Checks if is rep reference.
    *
-   * @param fileName
-   *          the file name
-   * @param transName
-   *          the trans name
+   * @param fileName  the file name
+   * @param transName the trans name
    * @return true, if is rep reference
    */
   public static boolean isRepReference( String fileName, String transName ) {
@@ -822,10 +815,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Checks if is file reference.
    *
-   * @param fileName
-   *          the file name
-   * @param transName
-   *          the trans name
+   * @param fileName  the file name
+   * @param transName the trans name
    * @return true, if is file reference
    */
   public static boolean isFileReference( String fileName, String transName ) {
@@ -835,14 +826,10 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Load xml.
    *
-   * @param jobnode
-   *          the jobnode
-   * @param rep
-   *          the rep
-   * @param prompter
-   *          the prompter
-   * @throws KettleXMLException
-   *           the kettle xml exception
+   * @param jobnode  the jobnode
+   * @param rep      the rep
+   * @param prompter the prompter
+   * @throws KettleXMLException the kettle xml exception
    */
   public void loadXML( Node jobnode, Repository rep, OverwritePrompter prompter ) throws KettleXMLException {
     loadXML( jobnode, rep, false, prompter );
@@ -851,80 +838,61 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Load xml.
    *
-   * @param jobnode
-   *          the jobnode
-   * @param fname
-   *          The filename
-   * @param rep
-   *          the rep
-   * @param prompter
-   *          the prompter
-   * @throws KettleXMLException
-   *           the kettle xml exception
+   * @param jobnode  the jobnode
+   * @param fname    The filename
+   * @param rep      the rep
+   * @param prompter the prompter
+   * @throws KettleXMLException the kettle xml exception
    */
-  public void loadXML( Node jobnode, String fname, Repository rep, OverwritePrompter prompter ) throws KettleXMLException {
+  public void loadXML( Node jobnode, String fname, Repository rep, OverwritePrompter prompter )
+      throws KettleXMLException {
     loadXML( jobnode, fname, rep, false, prompter );
   }
 
   /**
    * Load a block of XML from an DOM node.
    *
-   * @param jobnode
-   *          The node to load from
-   * @param rep
-   *          The reference to a repository to load additional information from
-   * @param ignoreRepositorySharedObjects
-   *          Do not load shared objects, handled separately
-   * @param prompter
-   *          The prompter to use in case a shared object gets overwritten
+   * @param jobnode                       The node to load from
+   * @param rep                           The reference to a repository to load additional information from
+   * @param ignoreRepositorySharedObjects Do not load shared objects, handled separately
+   * @param prompter                      The prompter to use in case a shared object gets overwritten
    * @throws KettleXMLException
    */
-  public void loadXML( Node jobnode, Repository rep, boolean ignoreRepositorySharedObjects,
-    OverwritePrompter prompter ) throws KettleXMLException {
+  public void loadXML( Node jobnode, Repository rep, boolean ignoreRepositorySharedObjects, OverwritePrompter prompter )
+      throws KettleXMLException {
     loadXML( jobnode, null, rep, ignoreRepositorySharedObjects, prompter );
   }
 
   /**
    * Load a block of XML from an DOM node.
    *
-   * @param jobnode
-   *          The node to load from
-   * @param fname
-   *          The filename
-   * @param rep
-   *          The reference to a repository to load additional information from
-   * @param ignoreRepositorySharedObjects
-   *          Do not load shared objects, handled separately
-   * @param prompter
-   *          The prompter to use in case a shared object gets overwritten
+   * @param jobnode                       The node to load from
+   * @param fname                         The filename
+   * @param rep                           The reference to a repository to load additional information from
+   * @param ignoreRepositorySharedObjects Do not load shared objects, handled separately
+   * @param prompter                      The prompter to use in case a shared object gets overwritten
    * @throws KettleXMLException
    * @deprecated
    */
   @Deprecated
   public void loadXML( Node jobnode, String fname, Repository rep, boolean ignoreRepositorySharedObjects,
-    OverwritePrompter prompter ) throws KettleXMLException {
+      OverwritePrompter prompter ) throws KettleXMLException {
     loadXML( jobnode, fname, rep, null, ignoreRepositorySharedObjects, prompter );
   }
 
   /**
    * Load a block of XML from an DOM node.
    *
-   * @param jobnode
-   *          The node to load from
-   * @param fname
-   *          The filename
-   * @param rep
-   *          The reference to a repository to load additional information from
-   * @param metaStore
-   *          the MetaStore to use
-   * @param ignoreRepositorySharedObjects
-   *          Do not load shared objects, handled separately
-   * @param prompter
-   *          The prompter to use in case a shared object gets overwritten
+   * @param jobnode                       The node to load from
+   * @param fname                         The filename
+   * @param rep                           The reference to a repository to load additional information from
+   * @param metaStore                     the MetaStore to use
+   * @param ignoreRepositorySharedObjects Do not load shared objects, handled separately
+   * @param prompter                      The prompter to use in case a shared object gets overwritten
    * @throws KettleXMLException
    */
   public void loadXML( Node jobnode, String fname, Repository rep, IMetaStore metaStore,
-    boolean ignoreRepositorySharedObjects, OverwritePrompter prompter ) throws KettleXMLException {
+      boolean ignoreRepositorySharedObjects, OverwritePrompter prompter ) throws KettleXMLException {
     Props props = null;
     if ( Props.isInitialized() ) {
       props = Props.getInstance();
@@ -994,15 +962,15 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
           sharedObjects = rep.readJobMetaSharedObjects( this );
         }
       } catch ( Exception e ) {
-        throw new KettleXMLException(
-          BaseMessages.getString( PKG, "JobMeta.ErrorReadingSharedObjects.Message" ), e );
-        // //
+        LogChannel.GENERAL
+            .logError( BaseMessages.getString( PKG, "JobMeta.ErrorReadingSharedObjects.Message", e.toString() ) );
+        LogChannel.GENERAL.logError( Const.getStackTracker( e ) );
       }
 
       // Load the database connections, slave servers, cluster schemas & partition schemas into this object.
       //
-      importFromMetaStore();      
-      
+      importFromMetaStore();
+
       // Read the named parameters.
       Node paramsNode = XMLHandler.getSubNode( jobnode, XML_TAG_PARAMETERS );
       int nrParams = XMLHandler.countNodes( paramsNode, "parameter" );
@@ -1021,10 +989,14 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
       // Read the database connections
       //
       int nr = XMLHandler.countNodes( jobnode, "connection" );
+      Set<String> privateDatabases = new HashSet<String>( nr );
       for ( int i = 0; i < nr; i++ ) {
         Node dbnode = XMLHandler.getSubNodeByNr( jobnode, "connection", i );
         DatabaseMeta dbcon = new DatabaseMeta( dbnode );
         dbcon.shareVariablesWith( this );
+        if ( !dbcon.isShared() ) {
+          privateDatabases.add( dbcon.getName() );
+        }
 
         DatabaseMeta exist = findDatabase( dbcon.getName() );
         if ( exist == null ) {
@@ -1032,9 +1004,9 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         } else {
           if ( !exist.isShared() ) {
             // skip shared connections
-            if ( shouldOverwrite( prompter, props, BaseMessages.getString( PKG,
-                "JobMeta.Dialog.ConnectionExistsOverWrite.Message", dbcon.getName() ), BaseMessages.getString( PKG,
-                "JobMeta.Dialog.ConnectionExistsOverWrite.DontShowAnyMoreMessage" ) ) ) {
+            if ( shouldOverwrite( prompter, props,
+                BaseMessages.getString( PKG, "JobMeta.Dialog.ConnectionExistsOverWrite.Message", dbcon.getName() ),
+                BaseMessages.getString( PKG, "JobMeta.Dialog.ConnectionExistsOverWrite.DontShowAnyMoreMessage" ) ) ) {
               int idx = indexOfDatabase( exist );
               removeDatabase( idx );
               addDatabase( idx, dbcon );
@@ -1042,6 +1014,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
           }
         }
       }
+      setPrivateDatabases( privateDatabases );
 
       // Read the slave servers...
       //
@@ -1059,9 +1032,9 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         if ( check != null ) {
           if ( !check.isShared() ) {
             // we don't overwrite shared objects.
-            if ( shouldOverwrite( prompter, props, BaseMessages.getString( PKG,
-                "JobMeta.Dialog.SlaveServerExistsOverWrite.Message", slaveServer.getName() ), BaseMessages.getString( PKG,
-                "JobMeta.Dialog.ConnectionExistsOverWrite.DontShowAnyMoreMessage" ) ) ) {
+            if ( shouldOverwrite( prompter, props, BaseMessages
+                    .getString( PKG, "JobMeta.Dialog.SlaveServerExistsOverWrite.Message", slaveServer.getName() ),
+                BaseMessages.getString( PKG, "JobMeta.Dialog.ConnectionExistsOverWrite.DontShowAnyMoreMessage" ) ) ) {
               addOrReplaceSlaveServer( slaveServer );
             }
           }
@@ -1111,6 +1084,10 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         // System.out.println("Reading entry:\n"+entrynode);
 
         JobEntryCopy je = new JobEntryCopy( entrynode, databases, slaveServers, rep, metaStore );
+
+        if ( je.isSpecial() && je.isMissing() ) {
+          addMissingEntry( (MissingEntry) je.getEntry() );
+        }
         JobEntryCopy prev = findJobEntry( je.getName(), 0, true );
         if ( prev != null ) {
           // See if the #0 (root entry) already exists!
@@ -1167,8 +1144,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
 
       clearChanged();
     } catch ( Exception e ) {
-      throw new KettleXMLException(
-        BaseMessages.getString( PKG, "JobMeta.Exception.UnableToLoadJobFromXMLNode" ), e );
+      throw new KettleXMLException( BaseMessages.getString( PKG, "JobMeta.Exception.UnableToLoadJobFromXMLNode" ), e );
     } finally {
       setInternalKettleVariables();
     }
@@ -1178,8 +1154,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
    * Read shared objects.
    *
    * @return the shared objects
-   * @throws KettleException
-   *           the kettle exception
+   * @throws KettleException the kettle exception
    */
   public SharedObjects readSharedObjects() throws KettleException {
     // Extract the shared steps, connections, etc. using the SharedObjects
@@ -1242,12 +1217,9 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Gets the job entry copy.
    *
-   * @param x
-   *          the x
-   * @param y
-   *          the y
-   * @param iconsize
-   *          the iconsize
+   * @param x        the x
+   * @param y        the y
+   * @param iconsize the iconsize
    * @return the job entry copy
    */
   public JobEntryCopy getJobEntryCopy( int x, int y, int iconsize ) {
@@ -1288,8 +1260,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Gets the job hop.
    *
-   * @param i
-   *          the i
+   * @param i the i
    * @return the job hop
    */
   public JobHopMeta getJobHop( int i ) {
@@ -1299,8 +1270,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Gets the job entry.
    *
-   * @param i
-   *          the i
+   * @param i the i
    * @return the job entry
    */
   public JobEntryCopy getJobEntry( int i ) {
@@ -1310,8 +1280,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Adds the job entry.
    *
-   * @param je
-   *          the je
+   * @param je the je
    */
   public void addJobEntry( JobEntryCopy je ) {
     jobcopies.add( je );
@@ -1322,8 +1291,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Adds the job hop.
    *
-   * @param hi
-   *          the hi
+   * @param hi the hi
    */
   public void addJobHop( JobHopMeta hi ) {
     jobhops.add( hi );
@@ -1333,10 +1301,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Adds the job entry.
    *
-   * @param p
-   *          the p
-   * @param si
-   *          the si
+   * @param p  the p
+   * @param si the si
    */
   public void addJobEntry( int p, JobEntryCopy si ) {
     jobcopies.add( p, si );
@@ -1346,32 +1312,37 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Adds the job hop.
    *
-   * @param p
-   *          the p
-   * @param hi
-   *          the hi
+   * @param p  the p
+   * @param hi the hi
    */
   public void addJobHop( int p, JobHopMeta hi ) {
-    jobhops.add( p, hi );
+    try {
+      jobhops.add( p, hi );
+    } catch ( IndexOutOfBoundsException e ) {
+      jobhops.add( hi );
+    }
     changedHops = true;
   }
 
   /**
    * Removes the job entry.
    *
-   * @param i
-   *          the i
+   * @param i the i
    */
   public void removeJobEntry( int i ) {
-    jobcopies.remove( i );
+    JobEntryCopy deleted = jobcopies.remove( i );
+    if ( deleted != null ) {
+      if ( deleted.getEntry() instanceof MissingEntry ) {
+        removeMissingEntry( (MissingEntry) deleted.getEntry() );
+      }
+    }
     setChanged();
   }
 
   /**
    * Removes the job hop.
    *
-   * @param i
-   *          the i
+   * @param i the i
    */
   public void removeJobHop( int i ) {
     jobhops.remove( i );
@@ -1379,10 +1350,20 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   }
 
   /**
+   * Removes a hop from the transformation. Also marks that the
+   * transformation's hops have changed.
+   *
+   * @param hop The hop to remove from the list of hops
+   */
+  public void removeJobHop( JobHopMeta hop ) {
+    jobhops.remove( hop );
+    setChanged();
+  }
+
+  /**
    * Index of job hop.
    *
-   * @param he
-   *          the he
+   * @param he the he
    * @return the int
    */
   public int indexOfJobHop( JobHopMeta he ) {
@@ -1392,8 +1373,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Index of job entry.
    *
-   * @param ge
-   *          the ge
+   * @param ge the ge
    * @return the int
    */
   public int indexOfJobEntry( JobEntryCopy ge ) {
@@ -1403,10 +1383,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Sets the job entry.
    *
-   * @param idx
-   *          the idx
-   * @param jec
-   *          the jec
+   * @param idx the idx
+   * @param jec the jec
    */
   public void setJobEntry( int idx, JobEntryCopy jec ) {
     jobcopies.set( idx, jec );
@@ -1415,10 +1393,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find an existing JobEntryCopy by it's name and number
    *
-   * @param name
-   *          The name of the job entry copy
-   * @param nr
-   *          The number of the job entry copy
+   * @param name The name of the job entry copy
+   * @param nr   The number of the job entry copy
    * @return The JobEntryCopy or null if nothing was found!
    */
   public JobEntryCopy findJobEntry( String name, int nr, boolean searchHiddenToo ) {
@@ -1436,8 +1412,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find job entry.
    *
-   * @param full_name_nr
-   *          the full_name_nr
+   * @param full_name_nr the full_name_nr
    * @return the job entry copy
    */
   public JobEntryCopy findJobEntry( String full_name_nr ) {
@@ -1455,8 +1430,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find job hop.
    *
-   * @param name
-   *          the name
+   * @param name the name
    * @return the job hop meta
    */
   public JobHopMeta findJobHop( String name ) {
@@ -1473,8 +1447,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find job hop from.
    *
-   * @param jge
-   *          the jge
+   * @param jge the jge
    * @return the job hop meta
    */
   public JobHopMeta findJobHopFrom( JobEntryCopy jge ) {
@@ -1494,10 +1467,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find job hop.
    *
-   * @param from
-   *          the from
-   * @param to
-   *          the to
+   * @param from the from
+   * @param to   the to
    * @return the job hop meta
    */
   public JobHopMeta findJobHop( JobEntryCopy from, JobEntryCopy to ) {
@@ -1507,20 +1478,16 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find job hop.
    *
-   * @param from
-   *          the from
-   * @param to
-   *          the to
-   * @param includeDisabled
-   *          the include disabled
+   * @param from            the from
+   * @param to              the to
+   * @param includeDisabled the include disabled
    * @return the job hop meta
    */
   public JobHopMeta findJobHop( JobEntryCopy from, JobEntryCopy to, boolean includeDisabled ) {
     for ( JobHopMeta hi : jobhops ) {
       if ( hi.isEnabled() || includeDisabled ) {
-        if ( hi != null
-          && hi.getFromEntry() != null && hi.getToEntry() != null && hi.getFromEntry().equals( from )
-          && hi.getToEntry().equals( to ) ) {
+        if ( hi != null && hi.getFromEntry() != null && hi.getToEntry() != null && hi.getFromEntry().equals( from )
+            && hi.getToEntry().equals( to ) ) {
           return hi;
         }
       }
@@ -1531,8 +1498,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find job hop to.
    *
-   * @param jge
-   *          the jge
+   * @param jge the jge
    * @return the job hop meta
    */
   public JobHopMeta findJobHopTo( JobEntryCopy jge ) {
@@ -1548,8 +1514,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find nr prev job entries.
    *
-   * @param from
-   *          the from
+   * @param from the from
    * @return the int
    */
   public int findNrPrevJobEntries( JobEntryCopy from ) {
@@ -1559,10 +1524,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find prev job entry.
    *
-   * @param to
-   *          the to
-   * @param nr
-   *          the nr
+   * @param to the to
+   * @param nr the nr
    * @return the job entry copy
    */
   public JobEntryCopy findPrevJobEntry( JobEntryCopy to, int nr ) {
@@ -1572,10 +1535,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find nr prev job entries.
    *
-   * @param to
-   *          the to
-   * @param info
-   *          the info
+   * @param to   the to
+   * @param info the info
    * @return the int
    */
   public int findNrPrevJobEntries( JobEntryCopy to, boolean info ) {
@@ -1594,12 +1555,9 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find prev job entry.
    *
-   * @param to
-   *          the to
-   * @param nr
-   *          the nr
-   * @param info
-   *          the info
+   * @param to   the to
+   * @param nr   the nr
+   * @param info the info
    * @return the job entry copy
    */
   public JobEntryCopy findPrevJobEntry( JobEntryCopy to, int nr, boolean info ) {
@@ -1621,8 +1579,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find nr next job entries.
    *
-   * @param from
-   *          the from
+   * @param from the from
    * @return the int
    */
   public int findNrNextJobEntries( JobEntryCopy from ) {
@@ -1640,10 +1597,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find next job entry.
    *
-   * @param from
-   *          the from
-   * @param cnt
-   *          the cnt
+   * @param from the from
+   * @param cnt  the cnt
    * @return the job entry copy
    */
   public JobEntryCopy findNextJobEntry( JobEntryCopy from, int cnt ) {
@@ -1665,32 +1620,65 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Checks for loop.
    *
-   * @param entry
-   *          the entry
+   * @param entry the entry
    * @return true, if successful
    */
   public boolean hasLoop( JobEntryCopy entry ) {
-    return hasLoop( entry, null );
+    clearLoopCache();
+    return hasLoop( entry, null, true ) || hasLoop( entry, null, false );
   }
 
   /**
    * Checks for loop.
    *
-   * @param entry
-   *          the entry
-   * @param lookup
-   *          the lookup
+   * @param entry  the entry
+   * @param lookup the lookup
    * @return true, if successful
    */
-  public boolean hasLoop( JobEntryCopy entry, JobEntryCopy lookup ) {
-    return false;
+  public boolean hasLoop( JobEntryCopy entry, JobEntryCopy lookup, boolean info ) {
+    String cacheKey =
+        entry.getName() + " - " + ( lookup != null ? lookup.getName() : "" ) + " - " + ( info ? "true" : "false" );
+
+    Boolean loop = loopCache.get( cacheKey );
+    if ( loop != null ) {
+      return loop.booleanValue();
+    }
+
+    boolean hasLoop = false;
+
+    int nr = findNrPrevJobEntries( entry, info );
+    for ( int i = 0; i < nr && !hasLoop; i++ ) {
+      JobEntryCopy prevJobMeta = findPrevJobEntry( entry, i, info );
+      if ( prevJobMeta != null ) {
+        if ( prevJobMeta.equals( entry ) ) {
+          hasLoop = true;
+          break; // no need to check more but caching this one below
+        } else if ( prevJobMeta.equals( lookup ) ) {
+          hasLoop = true;
+          break; // no need to check more but caching this one below
+        } else if ( hasLoop( prevJobMeta, lookup == null ? entry : lookup, info ) ) {
+          hasLoop = true;
+          break; // no need to check more but caching this one below
+        }
+      }
+    }
+    // Store in the cache...
+    //
+    loopCache.put( cacheKey, Boolean.valueOf( hasLoop ) );
+    return hasLoop;
+  }
+
+  /**
+   * Clears the loop cache.
+   */
+  private void clearLoopCache() {
+    loopCache.clear();
   }
 
   /**
    * Checks if is entry used in hops.
    *
-   * @param jge
-   *          the jge
+   * @param jge the jge
    * @return true, if is entry used in hops
    */
   public boolean isEntryUsedInHops( JobEntryCopy jge ) {
@@ -1705,8 +1693,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Count entries.
    *
-   * @param name
-   *          the name
+   * @param name the name
    * @return the int
    */
   public int countEntries( String name ) {
@@ -1726,8 +1713,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find unused nr.
    *
-   * @param name
-   *          the name
+   * @param name the name
    * @return the int
    */
   public int findUnusedNr( String name ) {
@@ -1744,8 +1730,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find max nr.
    *
-   * @param name
-   *          the name
+   * @param name the name
    * @return the int
    */
   public int findMaxNr( String name ) {
@@ -1764,8 +1749,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Proposes an alternative job entry name when the original already exists...
    *
-   * @param entryname
-   *          The job entry name to find an alternative for..
+   * @param entryname The job entry name to find an alternative for..
    * @return The alternative stepname.
    */
   public String getAlternativeJobentryName( String entryname ) {
@@ -1784,8 +1768,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Gets the all job graph entries.
    *
-   * @param name
-   *          the name
+   * @param name the name
    * @return the all job graph entries
    */
   public JobEntryCopy[] getAllJobGraphEntries( String name ) {
@@ -1812,8 +1795,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Gets the all job hops using.
    *
-   * @param name
-   *          the name
+   * @param name the name
    * @return the all job hops using
    */
   public JobHopMeta[] getAllJobHopsUsing( String name ) {
@@ -1823,13 +1805,30 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
       // Look at all the hops
 
       if ( hi.getFromEntry() != null && hi.getToEntry() != null ) {
-        if ( hi.getFromEntry().getName().equalsIgnoreCase( name )
-          || hi.getToEntry().getName().equalsIgnoreCase( name ) ) {
+        if ( hi.getFromEntry().getName().equalsIgnoreCase( name ) || hi.getToEntry().getName()
+            .equalsIgnoreCase( name ) ) {
           hops.add( hi );
         }
       }
     }
     return hops.toArray( new JobHopMeta[hops.size()] );
+  }
+
+  public boolean isPathExist( JobEntryInterface from, JobEntryInterface to ) {
+    for ( JobHopMeta hi : jobhops ) {
+      if ( hi.getFromEntry() != null && hi.getToEntry() != null ) {
+        if ( hi.getFromEntry().getName().equalsIgnoreCase( from.getName() ) ) {
+          if ( hi.getToEntry().getName().equalsIgnoreCase( to.getName() ) ) {
+            return true;
+          }
+          if ( isPathExist( hi.getToEntry().getEntry(), to ) ) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -1988,8 +1987,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Gets the entry indexes.
    *
-   * @param entries
-   *          the entries
+   * @param entries the entries
    * @return the entry indexes
    */
   public int[] getEntryIndexes( List<JobEntryCopy> entries ) {
@@ -2059,14 +2057,14 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Sets the batch id passed.
    *
-   * @param batchIdPassed
-   *          The batchIdPassed to set.
+   * @param batchIdPassed The batchIdPassed to set.
    */
   public void setBatchIdPassed( boolean batchIdPassed ) {
     this.batchIdPassed = batchIdPassed;
   }
 
-  public List<SQLStatement> getSQLStatements( Repository repository, ProgressMonitorListener monitor ) throws KettleException {
+  public List<SQLStatement> getSQLStatements( Repository repository, ProgressMonitorListener monitor )
+      throws KettleException {
     return getSQLStatements( repository, null, monitor );
   }
 
@@ -2076,10 +2074,10 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
    * @return An ArrayList of SQLStatement objects.
    */
   public List<SQLStatement> getSQLStatements( Repository repository, IMetaStore metaStore,
-    ProgressMonitorListener monitor ) throws KettleException {
+      ProgressMonitorListener monitor ) throws KettleException {
     if ( monitor != null ) {
-      monitor.beginTask(
-        BaseMessages.getString( PKG, "JobMeta.Monitor.GettingSQLNeededForThisJob" ), nrJobEntries() + 1 );
+      monitor
+          .beginTask( BaseMessages.getString( PKG, "JobMeta.Monitor.GettingSQLNeededForThisJob" ), nrJobEntries() + 1 );
     }
     List<SQLStatement> stats = new ArrayList<SQLStatement>();
 
@@ -2107,17 +2105,15 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         RowMetaInterface fields = jobLogTable.getLogRecord( LogStatus.START, null, null ).getRowMeta();
         String sql = db.getDDL( jobLogTable.getTableName(), fields );
         if ( sql != null && sql.length() > 0 ) {
-          SQLStatement stat =
-            new SQLStatement( BaseMessages.getString( PKG, "JobMeta.SQLFeedback.ThisJob" ), jobLogTable
-              .getDatabaseMeta(), sql );
+          SQLStatement stat = new SQLStatement( BaseMessages.getString( PKG, "JobMeta.SQLFeedback.ThisJob" ),
+              jobLogTable.getDatabaseMeta(), sql );
           stats.add( stat );
         }
       } catch ( KettleDatabaseException dbe ) {
-        SQLStatement stat =
-          new SQLStatement( BaseMessages.getString( PKG, "JobMeta.SQLFeedback.ThisJob" ), jobLogTable
-            .getDatabaseMeta(), null );
-        stat.setError( BaseMessages.getString( PKG, "JobMeta.SQLFeedback.ErrorObtainingJobLogTableInfo" )
-          + dbe.getMessage() );
+        SQLStatement stat = new SQLStatement( BaseMessages.getString( PKG, "JobMeta.SQLFeedback.ThisJob" ),
+            jobLogTable.getDatabaseMeta(), null );
+        stat.setError(
+            BaseMessages.getString( PKG, "JobMeta.SQLFeedback.ErrorObtainingJobLogTableInfo" ) + dbe.getMessage() );
         stats.add( stat );
       } finally {
         db.disconnect();
@@ -2135,13 +2131,13 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
 
   @SuppressWarnings( "deprecation" )
   private Collection<? extends SQLStatement> compatibleGetEntrySQLStatements( JobEntryInterface entry,
-    Repository repository, VariableSpace variableSpace ) throws KettleException {
+      Repository repository, VariableSpace variableSpace ) throws KettleException {
     return entry.getSQLStatements( repository, variableSpace );
   }
 
   @SuppressWarnings( "deprecation" )
   private Collection<? extends SQLStatement> compatibleGetEntrySQLStatements( JobEntryInterface entry,
-    Repository repository ) throws KettleException {
+      Repository repository ) throws KettleException {
     return entry.getSQLStatements( repository );
   }
 
@@ -2159,8 +2155,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Sets the arguments.
    *
-   * @param arguments
-   *          The arguments to set.
+   * @param arguments The arguments to set.
    * @deprecated moved to the job class
    */
   @Deprecated
@@ -2181,11 +2176,11 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
       // vars are...
       for ( int i = 0; i < nrJobEntries(); i++ ) {
         JobEntryCopy entryMeta = getJobEntry( i );
-        stringList.add( new StringSearchResult( entryMeta.getName(), entryMeta, this, BaseMessages.getString(
-          PKG, "JobMeta.SearchMetadata.JobEntryName" ) ) );
+        stringList.add( new StringSearchResult( entryMeta.getName(), entryMeta, this,
+            BaseMessages.getString( PKG, "JobMeta.SearchMetadata.JobEntryName" ) ) );
         if ( entryMeta.getDescription() != null ) {
-          stringList.add( new StringSearchResult( entryMeta.getDescription(), entryMeta, this, BaseMessages
-            .getString( PKG, "JobMeta.SearchMetadata.JobEntryDescription" ) ) );
+          stringList.add( new StringSearchResult( entryMeta.getDescription(), entryMeta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.JobEntryDescription" ) ) );
         }
         JobEntryInterface metaInterface = entryMeta.getEntry();
         StringSearcher.findMetaData( metaInterface, 1, stringList, entryMeta, this );
@@ -2197,37 +2192,37 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
     if ( searchDatabases ) {
       for ( int i = 0; i < nrDatabases(); i++ ) {
         DatabaseMeta meta = getDatabase( i );
-        stringList.add( new StringSearchResult( meta.getName(), meta, this, BaseMessages.getString(
-          PKG, "JobMeta.SearchMetadata.DatabaseConnectionName" ) ) );
+        stringList.add( new StringSearchResult( meta.getName(), meta, this,
+            BaseMessages.getString( PKG, "JobMeta.SearchMetadata.DatabaseConnectionName" ) ) );
         if ( meta.getHostname() != null ) {
-          stringList.add( new StringSearchResult( meta.getHostname(), meta, this, BaseMessages.getString(
-            PKG, "JobMeta.SearchMetadata.DatabaseHostName" ) ) );
+          stringList.add( new StringSearchResult( meta.getHostname(), meta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.DatabaseHostName" ) ) );
         }
         if ( meta.getDatabaseName() != null ) {
-          stringList.add( new StringSearchResult( meta.getDatabaseName(), meta, this, BaseMessages.getString(
-            PKG, "JobMeta.SearchMetadata.DatabaseName" ) ) );
+          stringList.add( new StringSearchResult( meta.getDatabaseName(), meta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.DatabaseName" ) ) );
         }
         if ( meta.getUsername() != null ) {
-          stringList.add( new StringSearchResult( meta.getUsername(), meta, this, BaseMessages.getString(
-            PKG, "JobMeta.SearchMetadata.DatabaseUsername" ) ) );
+          stringList.add( new StringSearchResult( meta.getUsername(), meta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.DatabaseUsername" ) ) );
         }
         if ( meta.getPluginId() != null ) {
-          stringList.add( new StringSearchResult( meta.getPluginId(), meta, this, BaseMessages.getString(
-            PKG, "JobMeta.SearchMetadata.DatabaseTypeDescription" ) ) );
+          stringList.add( new StringSearchResult( meta.getPluginId(), meta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.DatabaseTypeDescription" ) ) );
         }
         if ( meta.getDatabasePortNumberString() != null ) {
-          stringList.add( new StringSearchResult( meta.getDatabasePortNumberString(), meta, this, BaseMessages
-            .getString( PKG, "JobMeta.SearchMetadata.DatabasePort" ) ) );
+          stringList.add( new StringSearchResult( meta.getDatabasePortNumberString(), meta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.DatabasePort" ) ) );
         }
         if ( meta.getServername() != null ) {
-          stringList.add( new StringSearchResult( meta.getServername(), meta, this, BaseMessages.getString(
-            PKG, "JobMeta.SearchMetadata.DatabaseServer" ) ) );
+          stringList.add( new StringSearchResult( meta.getServername(), meta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.DatabaseServer" ) ) );
         }
         // if ( includePasswords )
         // {
         if ( meta.getPassword() != null ) {
-          stringList.add( new StringSearchResult( meta.getPassword(), meta, this, BaseMessages.getString(
-            PKG, "JobMeta.SearchMetadata.DatabasePassword" ) ) );
+          stringList.add( new StringSearchResult( meta.getPassword(), meta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.DatabasePassword" ) ) );
           // }
         }
       }
@@ -2239,8 +2234,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
       for ( int i = 0; i < nrNotes(); i++ ) {
         NotePadMeta meta = getNote( i );
         if ( meta.getNote() != null ) {
-          stringList.add( new StringSearchResult( meta.getNote(), meta, this, BaseMessages.getString(
-            PKG, "JobMeta.SearchMetadata.NotepadText" ) ) );
+          stringList.add( new StringSearchResult( meta.getNote(), meta, this,
+              BaseMessages.getString( PKG, "JobMeta.SearchMetadata.NotepadText" ) ) );
         }
       }
     }
@@ -2327,8 +2322,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Set the version of the job.
    *
-   * @param jobVersion
-   *          The new version description of the job
+   * @param jobVersion The new version description of the job
    */
   public void setJobversion( String jobVersion ) {
     this.jobVersion = jobVersion;
@@ -2337,8 +2331,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Set the status of the job.
    *
-   * @param jobStatus
-   *          The new status description of the job
+   * @param jobStatus The new status description of the job
    */
   public void setJobstatus( int jobStatus ) {
     this.jobStatus = jobStatus;
@@ -2347,10 +2340,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find a jobentry with a certain ID in a list of job entries.
    *
-   * @param jobentries
-   *          The List of jobentries
-   * @param id_jobentry
-   *          The id of the jobentry
+   * @param jobentries  The List of jobentries
+   * @param id_jobentry The id of the jobentry
    * @return The JobEntry object if one was found, null otherwise.
    */
   public static final JobEntryInterface findJobEntry( List<JobEntryInterface> jobentries, ObjectId id_jobentry ) {
@@ -2369,10 +2360,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Find a jobentrycopy with a certain ID in a list of job entry copies.
    *
-   * @param jobcopies
-   *          The List of jobentry copies
-   * @param id_jobentry_copy
-   *          The id of the jobentry copy
+   * @param jobcopies        The List of jobentry copies
+   * @param id_jobentry_copy The id of the jobentry copy
    * @return The JobEntryCopy object if one was found, null otherwise.
    */
   public static final JobEntryCopy findJobEntryCopy( List<JobEntryCopy> jobcopies, ObjectId id_jobentry_copy ) {
@@ -2397,85 +2386,84 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
     setInternalNameKettleVariable( var );
 
     // The name of the directory in the repository
-    var.setVariable( Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY, directory != null
-      ? directory.getPath() : "" );
+    variables
+        .setVariable( Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY, directory != null ? directory.getPath() : "" );
 
-    // Undefine the transformation specific variables:
-    // transformations can't run jobs, so if you use these they are 99.99%
-    // wrong.
-    var.setVariable( Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY, null );
-    var.setVariable( Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_NAME, null );
-    var.setVariable( Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY, null );
-    var.setVariable( Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_NAME, null );
-    var.setVariable( Const.INTERNAL_VARIABLE_TRANSFORMATION_NAME, null );
-    var.setVariable( Const.INTERNAL_VARIABLE_TRANSFORMATION_REPOSITORY_DIRECTORY, null );
+    boolean hasRepoDir = getRepositoryDirectory() != null && getRepository() != null;
+
+    // setup fallbacks
+    if ( hasRepoDir ) {
+      variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY,
+          variables.getVariable( Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY ) );
+    } else {
+      variables.setVariable( Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY,
+          variables.getVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY ) );
+    }
+
+    variables.setVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY, variables.getVariable(
+        repository != null ? Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY
+            : Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY ) );
   }
 
   /**
    * Sets the internal name kettle variable.
-   * 
-   * @param var
-   *          the new internal name kettle variable
+   *
+   * @param var the new internal name kettle variable
    */
   @Override
   protected void setInternalNameKettleVariable( VariableSpace var ) {
     // The name of the job
-    var.setVariable( Const.INTERNAL_VARIABLE_JOB_NAME, Const.NVL( name, "" ) );
+    variables.setVariable( Const.INTERNAL_VARIABLE_JOB_NAME, Const.NVL( name, "" ) );
   }
 
   /**
    * Sets the internal filename kettle variables.
    *
-   * @param var
-   *          the new internal filename kettle variables
+   * @param var the new internal filename kettle variables
    */
   @Override
   protected void setInternalFilenameKettleVariables( VariableSpace var ) {
     if ( filename != null ) {
       // we have a filename that's defined.
-
       try {
         FileObject fileObject = KettleVFS.getFileObject( filename, var );
         FileName fileName = fileObject.getName();
 
         // The filename of the job
-        var.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME, fileName.getBaseName() );
+        variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME, fileName.getBaseName() );
 
         // The directory of the job
         FileName fileDir = fileName.getParent();
-        var.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY, fileDir.getURI() );
+        variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY, fileDir.getURI() );
       } catch ( Exception e ) {
-        var.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY, "" );
-        var.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME, "" );
+        variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY, "" );
+        variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME, "" );
       }
     } else {
-      var.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY, "" );
-      var.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME, "" );
+      variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY, "" );
+      variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME, "" );
     }
   }
 
   @Deprecated
   public void checkJobEntries( List<CheckResultInterface> remarks, boolean only_selected,
-    ProgressMonitorListener monitor ) {
+      ProgressMonitorListener monitor ) {
     checkJobEntries( remarks, only_selected, monitor, this, null, null );
   }
 
   /**
    * Check all job entries within the job. Each Job Entry has the opportunity to check their own settings.
    *
-   * @param remarks
-   *          List of CheckResult remarks inserted into by each JobEntry
-   * @param only_selected
-   *          true if you only want to check the selected jobs
-   * @param monitor
-   *          Progress monitor (not presently in use)
+   * @param remarks       List of CheckResult remarks inserted into by each JobEntry
+   * @param only_selected true if you only want to check the selected jobs
+   * @param monitor       Progress monitor (not presently in use)
    */
   public void checkJobEntries( List<CheckResultInterface> remarks, boolean only_selected,
-    ProgressMonitorListener monitor, VariableSpace space, Repository repository, IMetaStore metaStore ) {
+      ProgressMonitorListener monitor, VariableSpace space, Repository repository, IMetaStore metaStore ) {
     remarks.clear(); // Empty remarks
     if ( monitor != null ) {
-      monitor.beginTask(
-        BaseMessages.getString( PKG, "JobMeta.Monitor.VerifyingThisJobEntryTask.Title" ), jobcopies.size() + 2 );
+      monitor.beginTask( BaseMessages.getString( PKG, "JobMeta.Monitor.VerifyingThisJobEntryTask.Title" ),
+          jobcopies.size() + 2 );
     }
     boolean stop_checking = false;
     for ( int i = 0; i < jobcopies.size() && !stop_checking; i++ ) {
@@ -2484,8 +2472,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         JobEntryInterface entry = copy.getEntry();
         if ( entry != null ) {
           if ( monitor != null ) {
-            monitor.subTask( BaseMessages.getString( PKG, "JobMeta.Monitor.VerifyingJobEntry.Title", entry
-              .getName() ) );
+            monitor
+                .subTask( BaseMessages.getString( PKG, "JobMeta.Monitor.VerifyingJobEntry.Title", entry.getName() ) );
           }
           entry.check( remarks, this, space, repository, metaStore );
           compatibleEntryCheck( entry, remarks );
@@ -2530,7 +2518,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   }
 
   public String exportResources( VariableSpace space, Map<String, ResourceDefinition> definitions,
-    ResourceNamingInterface namingInterface, Repository repository, IMetaStore metaStore ) throws KettleException {
+      ResourceNamingInterface namingInterface, Repository repository, IMetaStore metaStore ) throws KettleException {
     String resourceName = null;
     try {
       // Handle naming for both repository and XML bases resources...
@@ -2545,9 +2533,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         originalPath = directory.getPath();
         baseName = getName();
         fullname =
-          directory.getPath()
-            + ( directory.getPath().endsWith( RepositoryDirectory.DIRECTORY_SEPARATOR )
-              ? "" : RepositoryDirectory.DIRECTORY_SEPARATOR ) + getName() + "." + extension; //
+            directory.getPath() + ( directory.getPath().endsWith( RepositoryDirectory.DIRECTORY_SEPARATOR ) ? ""
+                : RepositoryDirectory.DIRECTORY_SEPARATOR ) + getName() + "." + extension; //
       } else {
         // Assume file
         //
@@ -2557,9 +2544,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         fullname = fileObject.getName().getPath();
       }
 
-      resourceName =
-        namingInterface.nameResource(
-          baseName, originalPath, extension, ResourceNamingInterface.FileNamingType.JOB );
+      resourceName = namingInterface
+          .nameResource( baseName, originalPath, extension, ResourceNamingInterface.FileNamingType.JOB );
       ResourceDefinition definition = definitions.get( resourceName );
       if ( definition == null ) {
         // If we do this once, it will be plenty :-)
@@ -2579,8 +2565,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         // loop over steps, databases will be exported to XML anyway.
         //
         for ( JobEntryCopy jobEntry : jobMeta.jobcopies ) {
-          compatibleJobEntryExportResources(
-            jobEntry.getEntry(), jobMeta, definitions, namingInterface, repository );
+          compatibleJobEntryExportResources( jobEntry.getEntry(), jobMeta, definitions, namingInterface, repository );
           jobEntry.getEntry().exportResources( jobMeta, definitions, namingInterface, repository, metaStore );
         }
 
@@ -2611,11 +2596,11 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
         definitions.put( fullname, definition );
       }
     } catch ( FileSystemException e ) {
-      throw new KettleException( BaseMessages.getString(
-        PKG, "JobMeta.Exception.AnErrorOccuredReadingJob", getFilename() ), e );
+      throw new KettleException(
+          BaseMessages.getString( PKG, "JobMeta.Exception.AnErrorOccuredReadingJob", getFilename() ), e );
     } catch ( KettleFileException e ) {
-      throw new KettleException( BaseMessages.getString(
-        PKG, "JobMeta.Exception.AnErrorOccuredReadingJob", getFilename() ), e );
+      throw new KettleException(
+          BaseMessages.getString( PKG, "JobMeta.Exception.AnErrorOccuredReadingJob", getFilename() ), e );
     }
 
     return resourceName;
@@ -2623,16 +2608,15 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
 
   @SuppressWarnings( "deprecation" )
   private void compatibleJobEntryExportResources( JobEntryInterface entry, JobMeta jobMeta,
-    Map<String, ResourceDefinition> definitions, ResourceNamingInterface namingInterface,
-    Repository repository2 ) throws KettleException {
+      Map<String, ResourceDefinition> definitions, ResourceNamingInterface namingInterface, Repository repository2 )
+      throws KettleException {
     entry.exportResources( jobMeta, definitions, namingInterface, repository );
   }
 
   /**
    * See if the name of the supplied job entry copy doesn't collide with any other job entry copy in the job.
    *
-   * @param je
-   *          The job entry copy to verify the name for.
+   * @param je The job entry copy to verify the name for.
    */
   public void renameJobEntryIfNameCollides( JobEntryCopy je ) {
     // First see if the name changed.
@@ -2737,8 +2721,7 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Sets the job entry log table.
    *
-   * @param jobEntryLogTable
-   *          the jobEntryLogTable to set
+   * @param jobEntryLogTable the jobEntryLogTable to set
    */
   public void setJobEntryLogTable( JobEntryLogTable jobEntryLogTable ) {
     this.jobEntryLogTable = jobEntryLogTable;
@@ -2775,14 +2758,26 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
   /**
    * Look up the references after import
    *
-   * @param repository
-   *          the repository to reference.
+   * @param repository the repository to reference.
    */
   public void lookupRepositoryReferences( Repository repository ) throws KettleException {
+    KettleException lastThrownException = null;
+    Map<String, RepositoryObjectType> notFoundedReferences = new HashMap<>();
     for ( JobEntryCopy copy : jobcopies ) {
       if ( copy.getEntry().hasRepositoryReferences() ) {
-        copy.getEntry().lookupRepositoryReferences( repository );
+        try {
+          copy.getEntry().lookupRepositoryReferences( repository );
+        } catch ( IdNotFoundException e ) {
+          lastThrownException = e;
+          String path = e.getPathToObject();
+          String name = e.getObjectName();
+          String key = StringUtils.isEmpty( path ) || path.equals( "null" ) ? name : path + "/" + name;
+          notFoundedReferences.put( key, e.getObjectType() );
+        }
       }
+    }
+    if ( lastThrownException != null && !notFoundedReferences.isEmpty() ) {
+      throw new LookupReferencesException( lastThrownException, notFoundedReferences );
     }
   }
 
@@ -2816,10 +2811,8 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
    * This method needs to be called to store those objects which are used and referenced in the job metadata but not
    * saved in the serialization.
    *
-   * @param metaStore
-   *          The store to save to
-   * @throws MetaStoreException
-   *           in case there is an error.
+   * @param metaStore The store to save to
+   * @throws MetaStoreException in case there is an error.
    */
   public void saveMetaStoreObjects( Repository repository, IMetaStore metaStore ) throws MetaStoreException {
   }
@@ -2830,5 +2823,30 @@ public class JobMeta extends AbstractMeta implements Cloneable, Comparable<JobMe
 
   public void setExtraLogTables( List<LogTableInterface> extraLogTables ) {
     this.extraLogTables = extraLogTables;
+  }
+
+  public boolean containsJobCopy( JobEntryCopy jobCopy ) {
+    return jobcopies.contains( jobCopy );
+  }
+
+  public List<MissingEntry> getMissingEntries() {
+    return missingEntries;
+  }
+
+  public void addMissingEntry( MissingEntry missingEntry ) {
+    if ( missingEntries == null ) {
+      missingEntries = new ArrayList<MissingEntry>();
+    }
+    missingEntries.add( missingEntry );
+  }
+
+  public void removeMissingEntry( MissingEntry missingEntry ) {
+    if ( missingEntries != null && missingEntry != null && missingEntries.contains( missingEntry ) ) {
+      missingEntries.remove( missingEntry );
+    }
+  }
+
+  public boolean hasMissingPlugins() {
+    return missingEntries != null && !missingEntries.isEmpty();
   }
 }

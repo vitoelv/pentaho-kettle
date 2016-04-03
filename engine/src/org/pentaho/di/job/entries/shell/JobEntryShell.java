@@ -38,7 +38,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -68,6 +68,8 @@ import org.pentaho.di.resource.ResourceEntry.ResourceType;
 import org.pentaho.di.resource.ResourceReference;
 import org.pentaho.metastore.api.IMetaStore;
 import org.w3c.dom.Node;
+
+import com.google.common.annotations.VisibleForTesting;
 
 /**
  * Shell type of Job Entry. You can define shell scripts to be executed in a Job.
@@ -458,19 +460,19 @@ public class JobEntryShell extends JobEntryBase implements Cloneable, JobEntryIn
         base = new String[] { "command.com", "/C" };
         if ( insertScript ) {
           tempFile =
-            KettleVFS.createTempFile( "kettle", "shell.bat", environmentSubstitute( workDirectory ), this );
+            KettleVFS.createTempFile( "kettle", "shell.bat", System.getProperty( "java.io.tmpdir" ), this );
           fileObject = createTemporaryShellFile( tempFile, realScript );
         }
       } else if ( Const.getOS().startsWith( "Windows" ) ) {
         base = new String[] { "cmd.exe", "/C" };
         if ( insertScript ) {
           tempFile =
-            KettleVFS.createTempFile( "kettle", "shell.bat", environmentSubstitute( workDirectory ), this );
+            KettleVFS.createTempFile( "kettle", "shell.bat", System.getProperty( "java.io.tmpdir" ), this );
           fileObject = createTemporaryShellFile( tempFile, realScript );
         }
       } else {
         if ( insertScript ) {
-          tempFile = KettleVFS.createTempFile( "kettle", "shell", environmentSubstitute( workDirectory ), this );
+          tempFile = KettleVFS.createTempFile( "kettle", "shell", System.getProperty( "java.io.tmpdir" ), this );
           fileObject = createTemporaryShellFile( tempFile, realScript );
         }
         base = new String[] { KettleVFS.getFilename( fileObject ) };
@@ -649,11 +651,16 @@ public class JobEntryShell extends JobEntryBase implements Cloneable, JobEntryIn
     //
     if ( tempFile != null && fileContent != null ) {
       try {
+        // flag indicates if current OS is Windows or not
+        boolean isWindows = Const.isWindows();
+        if ( !isWindows ) {
+          fileContent = replaceWinEOL( fileContent );
+        }
         tempFile.createFile();
         OutputStream outputStream = tempFile.getContent().getOutputStream();
         outputStream.write( fileContent.getBytes() );
         outputStream.close();
-        if ( !Const.getOS().startsWith( "Windows" ) ) {
+        if ( !isWindows ) {
           String tempFilename = KettleVFS.getFilename( tempFile );
           // Now we have to make this file executable...
           // On Unix-like systems this is done using the command "/bin/chmod +x filename"
@@ -673,6 +680,15 @@ public class JobEntryShell extends JobEntryBase implements Cloneable, JobEntryIn
       }
     }
     return tempFile;
+  }
+
+  @VisibleForTesting
+  String replaceWinEOL( String input ) {
+    String result = input;
+    // replace Windows's EOL if it's contained ( see PDI-12176 )
+    result = result.replaceAll( "\\r\\n?", "\n" );
+
+    return result;
   }
 
   public boolean evaluates() {

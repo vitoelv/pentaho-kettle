@@ -37,7 +37,7 @@
           command="spoon.importFile()" />
         <menu id="file-export" label="${Spoon.Menu.File.Export.Popup}" >
           <menupopup id="export-popup">
-          	<menuitem id="file-export-to-xml" label="${Spoon.Menu.File.Export}" command="spoon.exportXMLFile()" />
+            <menuitem id="file-export-to-xml" label="${Spoon.Menu.File.Export}" command="spoon.exportXMLFile()" />
             <menuitem id="file-export-all-to-xml" label="${Spoon.Menu.File.ExportAll}" command="spoon.exportAllXMLFile()" />
             <!--
             <menuitem id="file-save-as-vfs" label="${Spoon.Menu.File.SaveAsVFS}" command="spoon.saveXMLFileToVfs()" disabled="false" />                 
@@ -111,6 +111,8 @@
       <menupopup id="trans-popup">
         <menuitem id="process-run" acceltext="F9" accesskey="f9" label="${Spoon.Menu.Transformation.Run}"
           command="spoon.runFile()" />
+        <menuitem id="process-run-options" acceltext="F8" accesskey="f8" label="${Spoon.Menu.Transformation.RunOptions}"
+          command="spoon.runOptionsFile()" />
         <menuitem id="trans-preview" acceltext="F10" accesskey="f10" label="${Spoon.Menu.Transformation.Preview}"
           command="spoon.previewFile()" />
         <menuitem id="trans-debug" acceltext="SHIFT-F10" accesskey="shift-f10" label="${Spoon.Menu.Transformation.Debug}"
@@ -144,7 +146,7 @@
           </menupopup>
         </menu>
         <menu id="repository" label="${Spoon.Menu.Repository}">
-      	  <menupopup id="repository-popup">
+          <menupopup id="repository-popup">
             <menuitem id="repository-connect" acceltext="CTRL-R" accesskey="ctrl-r"
               label="${Spoon.Menu.Repository.ConnectToRepository}" command="spoon.openRepository()" />
             <menuitem id="repository-disconnect" acceltext="CTRL-D" accesskey="ctrl-d" disabled="true"
@@ -157,7 +159,7 @@
             <menuseparator />
             <menuitem id="repository-export-all" label="${Spoon.Menu.Repository.ExportAll}" command="spoon.exportRepositoryAll()" />
             <menuitem id="repository-import-directory" label="${Spoon.Menu.Repository.ImportFiles}" command="spoon.importDirectoryToRepository()" />            
-      	  </menupopup>
+          </menupopup>
         </menu>
         <menu id="wizard" label="${Spoon.Menu.Wizard}">
           <menupopup id="wizard-popup">
@@ -169,19 +171,25 @@
               command="spoon.ripDBWizard()" />
           </menupopup>
         </menu>
-        <menuitem id="authentication" label="${Spoon.Menu.Authentication}" command="spoon.showAuthenticationOptions()" />
+        <!-- 
+        Menu item is blocked until Authentication feature will not be implemented. 
+        <menuitem id="authentication" label="${Spoon.Menu.Authentication}" command="spoon.showAuthenticationOptions()" 
+        /> -->
         <menuseparator />
         <menuitem id="edit-options" label="${Spoon.Menu.Edit.Options}" command="spoon.editOptions()" />
+        <menuseparator />
+        <menuitem id="capability-manager" label="Capability Manager" command="spoon.editCapabilities()" />
+        <menuseparator />
+        <menuitem id="help-plugins" label="${Spoon.Menu.ShowPluginInfo}" command="spoon.showPluginInfo()" />
+        
       </menupopup>
     </menu>
     
     <menu id="help" label="${Spoon.Menu.Help}">
       <menupopup id="help-popup">
-        <menuitem id="help-tip" label="${Spoon.Menu.Help.Tip}" command="spoon.showTips()" />
         <menuitem id="help-welcome" label="${Spoon.Menu.Help.Welcome}" command="spoon.showWelcomePage()" />
         <menuitem id="help-welcome" label="${Spoon.Menu.Help.Documentation}" command="spoon.showDocumentMap()" />
         <menuseparator id="help-separator-1"/>
-        <menuitem id="help-plugins" label="${Spoon.Menu.ShowPluginInfo}" command="spoon.showPluginInfo()" />
         <menuitem id="help-about" label="${Spoon.Menu.About}" command="spoon.helpAbout()" />
       </menupopup>
     </menu>
@@ -248,7 +256,7 @@
     <menuitem id="database-inst-share" label="${Spoon.Menu.Popup.CONNECTIONS.Share}" command="spoon.shareObject('database-inst-share')" />
     <menuitem id="database-inst-explore" label="${Spoon.Menu.Popup.CONNECTIONS.Explore}" command="spoon.exploreDB()" />
     <menuseparator />
-  	<menuitem id="database-inst-dependancy" label="${Spoon.Menu.Popup.CONNECTIONS.ShowDependancies}" command="spoon.displayDbDependancies()" />
+    <menuitem id="database-inst-dependancy" label="${Spoon.Menu.Popup.CONNECTIONS.ShowDependancies}" command="spoon.displayDbDependancies()" />
   </menupopup>
 
   <menupopup id="step-inst">

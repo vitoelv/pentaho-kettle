@@ -33,8 +33,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.provider.local.LocalFile;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.provider.local.LocalFile;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -590,10 +590,7 @@ public class JobEntryMssqlBulkLoad extends JobEntryBase implements Cloneable, Jo
                 // Of course, the table should have been created already before the bulk load operation
                 db.disconnect();
                 result.setNrErrors( 1 );
-                if ( log.isDetailed() ) {
-                  logDetailed( BaseMessages
-                    .getString( PKG, "JobMssqlBulkLoad.Error.TableNotExists", realTablename ) );
-                }
+                logError( BaseMessages.getString( PKG, "JobMssqlBulkLoad.Error.TableNotExists", realTablename ) );
               }
             } catch ( KettleDatabaseException dbe ) {
               db.disconnect();

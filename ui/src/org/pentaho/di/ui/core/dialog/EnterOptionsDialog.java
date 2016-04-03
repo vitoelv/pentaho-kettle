@@ -144,14 +144,14 @@ public class EnterOptionsDialog extends Dialog {
   private Text wMiddlePct;
 
   private Text wGridSize;
+  
+  private Button wShowCanvasGrid;
 
   private Button wAntiAlias;
 
   private Button wOriginalLook;
 
   private Button wBranding;
-
-  private Button wShowTips;
 
   private Button wShowWelcome;
 
@@ -350,13 +350,13 @@ public class EnterOptionsDialog extends Dialog {
     fdlFFont.top = new FormAttachment( 0, nr * h + margin + 10 );
     wlFFont.setLayoutData( fdlFFont );
 
-    wdFFont = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wdFFont = new Button( wLookComp, SWT.PUSH | SWT.CENTER );
     props.setLook( wdFFont );
-
     FormData fddFFont = layoutResetOptionButton( wdFFont );
     fddFFont.right = new FormAttachment( 100, 0 );
     fddFFont.top = new FormAttachment( 0, nr * h + margin );
     fddFFont.bottom = new FormAttachment( 0, ( nr + 1 ) * h + margin );
+
     wdFFont.setLayoutData( fddFFont );
     wdFFont.addSelectionListener( new SelectionAdapter() {
       public void widgetSelected( SelectionEvent arg0 ) {
@@ -368,7 +368,7 @@ public class EnterOptionsDialog extends Dialog {
       }
     } );
 
-    wbFFont = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wbFFont = new Button( wLookComp, SWT.PUSH );
     props.setLook( wbFFont );
 
     FormData fdbFFont = layoutEditOptionButton( wbFFont );
@@ -420,7 +420,7 @@ public class EnterOptionsDialog extends Dialog {
     fdlGFont.top = new FormAttachment( 0, nr * h + margin + 10 );
     wlGFont.setLayoutData( fdlGFont );
 
-    wdGFont = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wdGFont = new Button( wLookComp, SWT.PUSH );
     props.setLook( wdGFont );
 
     FormData fddGFont = layoutResetOptionButton( wdGFont );
@@ -438,7 +438,7 @@ public class EnterOptionsDialog extends Dialog {
       }
     } );
 
-    wbGFont = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wbGFont = new Button( wLookComp, SWT.PUSH );
     props.setLook( wbGFont );
 
     FormData fdbGFont = layoutEditOptionButton( wbGFont );
@@ -490,7 +490,7 @@ public class EnterOptionsDialog extends Dialog {
     fdlNFont.top = new FormAttachment( 0, nr * h + margin + 10 );
     wlNFont.setLayoutData( fdlNFont );
 
-    wdNFont = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wdNFont = new Button( wLookComp, SWT.PUSH );
     props.setLook( wdNFont );
 
     FormData fddNFont = layoutResetOptionButton( wdNFont );
@@ -507,7 +507,7 @@ public class EnterOptionsDialog extends Dialog {
       }
     } );
 
-    wbNFont = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wbNFont = new Button( wLookComp, SWT.PUSH );
     props.setLook( wbNFont );
 
     FormData fdbNFont = layoutEditOptionButton( wbNFont );
@@ -559,7 +559,7 @@ public class EnterOptionsDialog extends Dialog {
     fdlBGColor.top = new FormAttachment( 0, nr * h + margin + 10 );
     wlBGColor.setLayoutData( fdlBGColor );
 
-    wdBGcolor = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wdBGcolor = new Button( wLookComp, SWT.PUSH );
     props.setLook( wdBGcolor );
 
     FormData fddBGColor = layoutResetOptionButton( wdBGcolor );
@@ -580,7 +580,7 @@ public class EnterOptionsDialog extends Dialog {
       }
     } );
 
-    wbBGColor = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wbBGColor = new Button( wLookComp, SWT.PUSH );
     props.setLook( wbBGColor );
 
     FormData fdbBGColor = layoutEditOptionButton( wbBGColor );
@@ -628,7 +628,7 @@ public class EnterOptionsDialog extends Dialog {
     fdlGrColor.top = new FormAttachment( 0, nr * h + margin + 10 );
     wlGrColor.setLayoutData( fdlGrColor );
 
-    wdGrColor = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wdGrColor = new Button( wLookComp, SWT.PUSH );
     props.setLook( wdGrColor );
 
     FormData fddGrColor = layoutResetOptionButton( wdGrColor );
@@ -647,7 +647,7 @@ public class EnterOptionsDialog extends Dialog {
       }
     } );
 
-    wbGrColor = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wbGrColor = new Button( wLookComp, SWT.PUSH );
     props.setLook( wbGrColor );
 
     FormData fdbGrColor = layoutEditOptionButton( wbGrColor );
@@ -691,7 +691,7 @@ public class EnterOptionsDialog extends Dialog {
     fdlTabColor.top = new FormAttachment( 0, nr * h + margin + 10 );
     wlTabColor.setLayoutData( fdlTabColor );
 
-    wdTabColor = new Button( wLookComp, SWT.PUSH | SWT.BORDER | SWT.CENTER );
+    wdTabColor = new Button( wLookComp, SWT.PUSH | SWT.CENTER );
     props.setLook( wdTabColor );
 
     FormData fddTabColor = layoutResetOptionButton( wdTabColor );
@@ -710,7 +710,7 @@ public class EnterOptionsDialog extends Dialog {
       }
     } );
 
-    wbTabColor = new Button( wLookComp, SWT.PUSH | SWT.BORDER );
+    wbTabColor = new Button( wLookComp, SWT.PUSH );
     props.setLook( wbTabColor );
 
     FormData fdbTabColor = layoutEditOptionButton( wbTabColor );
@@ -834,14 +834,33 @@ public class EnterOptionsDialog extends Dialog {
     fdGridSize.right = new FormAttachment( 100, -margin );
     fdGridSize.top = new FormAttachment( wMiddlePct, margin );
     wGridSize.setLayoutData( fdGridSize );
-
+    
+    // Show Canvas Grid
+    Label wlShowCanvasGrid = new Label( wLookComp, SWT.RIGHT );
+    wlShowCanvasGrid.setText( BaseMessages.getString( PKG, "EnterOptionsDialog.ShowCanvasGrid.Label" ) );
+    wlShowCanvasGrid.setToolTipText( BaseMessages.getString( PKG, "EnterOptionsDialog.ShowCanvasGrid.ToolTip" ) );
+    props.setLook( wlShowCanvasGrid );
+    FormData fdlShowCanvasGrid = new FormData();
+    fdlShowCanvasGrid.left = new FormAttachment( 0, 0 );
+    fdlShowCanvasGrid.right = new FormAttachment( middle, -margin );
+    fdlShowCanvasGrid.top = new FormAttachment( wGridSize, margin );
+    wlShowCanvasGrid.setLayoutData( fdlShowCanvasGrid );
+    wShowCanvasGrid = new Button( wLookComp, SWT.CHECK );
+    props.setLook( wShowCanvasGrid );
+    wShowCanvasGrid.setSelection( props.isShowCanvasGridEnabled() );
+    FormData fdShowCanvasGrid = new FormData();
+    fdShowCanvasGrid.left = new FormAttachment( middle, 0 );
+    fdShowCanvasGrid.right = new FormAttachment( 100, -margin );
+    fdShowCanvasGrid.top = new FormAttachment( wGridSize, margin );
+    wShowCanvasGrid.setLayoutData( fdShowCanvasGrid );
+    
     // Enable anti-aliasing
     Label wlAntiAlias = new Label( wLookComp, SWT.RIGHT );
     wlAntiAlias.setText( BaseMessages.getString( PKG, "EnterOptionsDialog.CanvasAntiAliasing.Label" ) );
     props.setLook( wlAntiAlias );
     FormData fdlAntiAlias = new FormData();
     fdlAntiAlias.left = new FormAttachment( 0, 0 );
-    fdlAntiAlias.top = new FormAttachment( wGridSize, margin );
+    fdlAntiAlias.top = new FormAttachment( wShowCanvasGrid, margin );
     fdlAntiAlias.right = new FormAttachment( middle, -margin );
     wlAntiAlias.setLayoutData( fdlAntiAlias );
     wAntiAlias = new Button( wLookComp, SWT.CHECK );
@@ -849,7 +868,7 @@ public class EnterOptionsDialog extends Dialog {
     wAntiAlias.setSelection( props.isAntiAliasingEnabled() );
     FormData fdAntiAlias = new FormData();
     fdAntiAlias.left = new FormAttachment( middle, 0 );
-    fdAntiAlias.top = new FormAttachment( wGridSize, margin );
+    fdAntiAlias.top = new FormAttachment( wShowCanvasGrid, margin );
     fdAntiAlias.right = new FormAttachment( 100, 0 );
     wAntiAlias.setLayoutData( fdAntiAlias );
 
@@ -1072,31 +1091,13 @@ public class EnterOptionsDialog extends Dialog {
     fdMaxNrHistLines.top = new FormAttachment( wMaxLogLineTimeout, margin );
     wMaxNrHistLines.setLayoutData( fdMaxNrHistLines );
 
-    // Show tips on startup?
-    Label wlShowTips = new Label( wGeneralComp, SWT.RIGHT );
-    wlShowTips.setText( BaseMessages.getString( PKG, "EnterOptionsDialog.ShowTipsStartup.Label" ) );
-    props.setLook( wlShowTips );
-    FormData fdlShowTips = new FormData();
-    fdlShowTips.left = new FormAttachment( 0, 0 );
-    fdlShowTips.top = new FormAttachment( wMaxNrHistLines, margin );
-    fdlShowTips.right = new FormAttachment( middle, -margin );
-    wlShowTips.setLayoutData( fdlShowTips );
-    wShowTips = new Button( wGeneralComp, SWT.CHECK );
-    props.setLook( wShowTips );
-    wShowTips.setSelection( props.showTips() );
-    FormData fdShowTips = new FormData();
-    fdShowTips.left = new FormAttachment( middle, 0 );
-    fdShowTips.top = new FormAttachment( wMaxNrHistLines, margin );
-    fdShowTips.right = new FormAttachment( 100, 0 );
-    wShowTips.setLayoutData( fdShowTips );
-
     // Show welcome page on startup?
     Label wlShowWelcome = new Label( wGeneralComp, SWT.RIGHT );
     wlShowWelcome.setText( BaseMessages.getString( PKG, "EnterOptionsDialog.ShowWelcomePage.Label" ) );
     props.setLook( wlShowWelcome );
     FormData fdlShowWelcome = new FormData();
     fdlShowWelcome.left = new FormAttachment( 0, 0 );
-    fdlShowWelcome.top = new FormAttachment( wShowTips, margin );
+    fdlShowWelcome.top = new FormAttachment( wMaxNrHistLines, margin );
     fdlShowWelcome.right = new FormAttachment( middle, -margin );
     wlShowWelcome.setLayoutData( fdlShowWelcome );
     wShowWelcome = new Button( wGeneralComp, SWT.CHECK );
@@ -1104,7 +1105,7 @@ public class EnterOptionsDialog extends Dialog {
     wShowWelcome.setSelection( props.showWelcomePageOnStartup() );
     FormData fdShowWelcome = new FormData();
     fdShowWelcome.left = new FormAttachment( middle, 0 );
-    fdShowWelcome.top = new FormAttachment( wShowTips, margin );
+    fdShowWelcome.top = new FormAttachment( wMaxNrHistLines, margin );
     fdShowWelcome.right = new FormAttachment( 100, 0 );
     wShowWelcome.setLayoutData( fdShowWelcome );
 
@@ -1352,10 +1353,12 @@ public class EnterOptionsDialog extends Dialog {
     fdlClearCustom.top = new FormAttachment( wExitWarning, margin + 10 );
     fdlClearCustom.right = new FormAttachment( middle, -margin );
     wlClearCustom.setLayoutData( fdlClearCustom );
-    wClearCustom = new Button( wGeneralComp, SWT.PUSH | SWT.BORDER );
+    wClearCustom = new Button( wGeneralComp, SWT.PUSH );
     props.setLook( wClearCustom );
 
     FormData fdClearCustom = layoutResetOptionButton( wClearCustom );
+    fdClearCustom.width = fdClearCustom.width + 6;
+    fdClearCustom.height = fdClearCustom.height + 18;
     fdClearCustom.left = new FormAttachment( middle, 0 );
     fdClearCustom.top = new FormAttachment( wExitWarning, margin );
     wClearCustom.setLayoutData( fdClearCustom );
@@ -1384,7 +1387,7 @@ public class EnterOptionsDialog extends Dialog {
     props.setLook( autoCollapseLbl );
     FormData fdautoCollapse = new FormData();
     fdautoCollapse.left = new FormAttachment( 0, 0 );
-    fdautoCollapse.top = new FormAttachment( wlClearCustom, margin );
+    fdautoCollapse.top = new FormAttachment( wlClearCustom, margin + 8 );
     fdautoCollapse.right = new FormAttachment( middle, -margin );
     autoCollapseLbl.setLayoutData( fdautoCollapse );
     autoCollapseBtn = new Button( wGeneralComp, SWT.CHECK );
@@ -1392,7 +1395,7 @@ public class EnterOptionsDialog extends Dialog {
     autoCollapseBtn.setSelection( props.getAutoCollapseCoreObjectsTree() );
     FormData helpautoCollapse = new FormData();
     helpautoCollapse.left = new FormAttachment( middle, 0 );
-    helpautoCollapse.top = new FormAttachment( wlClearCustom, margin );
+    helpautoCollapse.top = new FormAttachment( wlClearCustom, margin + 8 );
     helpautoCollapse.right = new FormAttachment( 100, 0 );
     autoCollapseBtn.setLayoutData( helpautoCollapse );
 
@@ -1402,7 +1405,7 @@ public class EnterOptionsDialog extends Dialog {
     props.setLook( tooltipLbl );
     FormData fdlToolTipData = new FormData();
     fdlToolTipData.left = new FormAttachment( 0, 0 );
-    fdlToolTipData.top = new FormAttachment( autoCollapseLbl, margin );
+    fdlToolTipData.top = new FormAttachment( autoCollapseBtn, margin );
     fdlToolTipData.right = new FormAttachment( middle, -margin );
     tooltipLbl.setLayoutData( fdlToolTipData );
     tooltipBtn = new Button( wGeneralComp, SWT.CHECK );
@@ -1410,7 +1413,7 @@ public class EnterOptionsDialog extends Dialog {
     tooltipBtn.setSelection( props.showToolTips() );
     FormData toolTipBtnData = new FormData();
     toolTipBtnData.left = new FormAttachment( middle, 0 );
-    toolTipBtnData.top = new FormAttachment( autoCollapseLbl, margin );
+    toolTipBtnData.top = new FormAttachment( autoCollapseBtn, margin );
     toolTipBtnData.right = new FormAttachment( 100, 0 );
     tooltipBtn.setLayoutData( toolTipBtnData );
 
@@ -1527,7 +1530,7 @@ public class EnterOptionsDialog extends Dialog {
     if ( editButton != null ) {
       button.setImage( editButton );
       button.setBackground( GUIResource.getInstance().getColorWhite() );
-      fd.width = editButton.getBounds().width + 4;
+      fd.width = editButton.getBounds().width + 20;
       fd.height = editButton.getBounds().height;
     } else {
       button.setText( BaseMessages.getString( PKG, "EnterOptionsDialog.Button.Reset" ) );
@@ -1549,7 +1552,7 @@ public class EnterOptionsDialog extends Dialog {
     if ( editButton != null ) {
       button.setImage( editButton );
       button.setBackground( GUIResource.getInstance().getColorWhite() );
-      fd.width = editButton.getBounds().width + 4;
+      fd.width = editButton.getBounds().width + 20;
       fd.height = editButton.getBounds().height;
     } else {
       button.setText( BaseMessages.getString( PKG, "EnterOptionsDialog.Button.Edit" ) );
@@ -1620,7 +1623,6 @@ public class EnterOptionsDialog extends Dialog {
       wMaxLogLineTimeout.getText(), Const.MAX_LOG_LINE_TIMEOUT_MINUTES ) );
     props.setMaxNrLinesInHistory( Const.toInt( wMaxNrHistLines.getText(), Const.MAX_NR_HISTORY_LINES ) );
 
-    props.setShowTips( wShowTips.getSelection() );
     props.setShowWelcomePageOnStartup( wShowWelcome.getSelection() );
     props.setUseDBCache( wUseCache.getSelection() );
     props.setOpenLastFile( wOpenLast.getSelection() );
@@ -1634,6 +1636,7 @@ public class EnterOptionsDialog extends Dialog {
     props.setShowCopyOrDistributeWarning( wCopyDistrib.getSelection() );
     props.setRepositoriesDialogAtStartupShown( wShowRep.getSelection() );
     props.setAntiAliasingEnabled( wAntiAlias.getSelection() );
+    props.setShowCanvasGridEnabled( wShowCanvasGrid.getSelection() );
     props.setExitWarningShown( wExitWarning.getSelection() );
     props.setOSLookShown( wOriginalLook.getSelection() );
     props.setBrandingActive( wBranding.getSelection() );

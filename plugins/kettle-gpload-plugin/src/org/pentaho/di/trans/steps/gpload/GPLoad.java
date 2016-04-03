@@ -37,8 +37,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileSystemException;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileSystemException;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
@@ -281,8 +281,12 @@ public class GPLoad extends BaseStep implements StepInterface {
     contents.append( GPLoad.INDENT ).append( "- FORMAT: TEXT" ).append( Const.CR );
     contents.append( GPLoad.INDENT ).append( "- DELIMITER: " ).append( GPLoad.SINGLE_QUOTE ).append( delimiter )
         .append( GPLoad.SINGLE_QUOTE ).append( Const.CR );
+//  if ( !Const.isEmpty( meta.getNullAs() ) ) {
+    if ( !Const.isEmpty( meta.getNullAs() ) ) {
+      contents.append( GPLoad.INDENT ).append( "- NULL_AS: " ).append( GPLoad.SINGLE_QUOTE ).append( meta.getNullAs() ).append( GPLoad.SINGLE_QUOTE ).append( Const.CR );
+    }
 
-    // TODO: implement escape character, null_as
+    // TODO: implement escape character
     // TODO: test what happens when a single quote is specified- can we specify a single quiote within doubole quotes
     // then?
     String enclosure = meta.getEnclosure();
@@ -389,7 +393,7 @@ public class GPLoad extends BaseStep implements StepInterface {
 
   /**
    * Create a control file.
-   * 
+   *
    * @param filename
    * @param meta
    * @throws KettleException

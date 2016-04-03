@@ -46,10 +46,10 @@ import javax.mail.internet.MimeMessage;
 import javax.mail.internet.MimeMultipart;
 import javax.mail.util.ByteArrayDataSource;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileSelectInfo;
-import org.apache.commons.vfs.FileSelector;
-import org.apache.commons.vfs.FileType;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileSelectInfo;
+import org.apache.commons.vfs2.FileSelector;
+import org.apache.commons.vfs2.FileType;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.logging.LogChannelInterface;
@@ -311,7 +311,7 @@ public class Mail extends BaseStep implements StepInterface {
           throw new KettleException( BaseMessages.getString( PKG, "Mail.Exception.AttachedContentFieldEmpty" ) );
         }
         data.indexOfAttachedContent = data.previousRowMeta.indexOfValue( attachedContentField );
-        if ( data.indexOfComment < 0 ) {
+        if ( data.indexOfAttachedContent < 0 ) {
           throw new KettleException( BaseMessages.getString(
             PKG, "Mail.Exception.CouldnotFindAttachedContentField", attachedContentField ) );
         }
@@ -323,7 +323,7 @@ public class Mail extends BaseStep implements StepInterface {
             PKG, "Mail.Exception.AttachedContentFileNameFieldEmpty" ) );
         }
         data.IndexOfAttachedFilename = data.previousRowMeta.indexOfValue( attachedContentFileNameField );
-        if ( data.indexOfComment < 0 ) {
+        if ( data.IndexOfAttachedFilename < 0 ) {
           throw new KettleException( BaseMessages.getString(
             PKG, "Mail.Exception.CouldnotFindAttachedContentFileNameField", attachedContentFileNameField ) );
         }

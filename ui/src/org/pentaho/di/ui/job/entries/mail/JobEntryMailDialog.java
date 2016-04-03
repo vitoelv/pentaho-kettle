@@ -180,7 +180,7 @@ public class JobEntryMailDialog extends JobEntryDialog implements JobEntryDialog
 
   private Label wlComment;
 
-  private Text wComment;
+  private TextVar wComment;
 
   private FormData fdlComment, fdComment;
 
@@ -558,8 +558,7 @@ public class JobEntryMailDialog extends JobEntryDialog implements JobEntryDialog
     // AuthPass line
     wAuthPass = new LabelTextVar( jobMeta, wAuthentificationGroup,
       BaseMessages.getString( PKG, "JobMail.AuthenticationPassword.Label" ),
-      BaseMessages.getString( PKG, "JobMail.AuthenticationPassword.Tooltip" ) );
-    wAuthPass.setEchoChar( '*' );
+      BaseMessages.getString( PKG, "JobMail.AuthenticationPassword.Tooltip" ), true );
     wAuthPass.addModifyListener( lsMod );
     fdAuthPass = new FormData();
     fdAuthPass.left = new FormAttachment( 0, 0 );
@@ -906,7 +905,9 @@ public class JobEntryMailDialog extends JobEntryDialog implements JobEntryDialog
     fdlComment.right = new FormAttachment( middle, margin );
     wlComment.setLayoutData( fdlComment );
 
-    wComment = new Text( wMessageGroup, SWT.MULTI | SWT.LEFT | SWT.BORDER | SWT.V_SCROLL | SWT.H_SCROLL );
+    
+    //wComment = new Text( wMessageGroup, SWT.MULTI | SWT.LEFT | SWT.BORDER | SWT.V_SCROLL | SWT.H_SCROLL );
+    wComment = new TextVar( jobMeta, wMessageGroup, SWT.MULTI | SWT.LEFT | SWT.BORDER | SWT.V_SCROLL | SWT.H_SCROLL );
     props.setLook( wComment );
     wComment.addModifyListener( lsMod );
     fdComment = new FormData();

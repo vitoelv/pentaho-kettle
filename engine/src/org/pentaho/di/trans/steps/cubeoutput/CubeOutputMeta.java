@@ -25,7 +25,7 @@ package org.pentaho.di.trans.steps.cubeoutput;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -139,7 +139,7 @@ public class CubeOutputMeta extends BaseStepMeta implements StepMetaInterface {
   }
 
   public void setDefault() {
-    filename = "file";
+    filename = "file.cube";
     addToResultFilenames = false;
     doNotOpenNewFileInit = false;
   }

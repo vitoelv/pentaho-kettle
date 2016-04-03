@@ -126,13 +126,13 @@
           <equals arg1="${modules.publish-local}" arg2="true"/>
           <then>
             <ant antfile="build.xml" dir="@{module}" inheritall="false">
-              <target name="resolve"/>
+              <target name="build"/>
               <target name="publish-local"/>
             </ant>
           </then>
           <else>
             <ant antfile="build.xml" dir="@{module}" inheritall="false">
-              <target name="resolve"/>
+              <target name="build"/>
               <target name="publish"/>
             </ant>
           </else>
@@ -164,15 +164,13 @@
           <equals arg1="${plugins.publish-local}" arg2="true"/>
           <then>
             <ant antfile="build.xml" dir="plugins/@{plugin}" inheritall="false">
-              <target name="resolve"/>
-              <target name="package"/>
+              <target name="build"/>
               <target name="publish-local"/>
             </ant>
           </then>
           <else>
             <ant antfile="build.xml" dir="plugins/@{plugin}" inheritall="false">
-              <target name="resolve"/>
-              <target name="package"/>
+              <target name="build"/>
               <target name="publish"/>
             </ant>
           </else>
@@ -212,6 +210,36 @@
       </sequential>
     </for>
   </target>
+
+  <!--=======================================================================
+        Support pentaho-standard CI subfloor build targets
+
+      ====================================================================-->
+  <target name="build-sonar" depends="install-antcontrib,subfloor.clean">
+    <antcall target="call-for-all">
+      <param name="target.name" value="subfloor.build-sonar"/>
+    </antcall>
+  </target>
+
+  <target name="continuous-sonar" depends="install-antcontrib,subfloor.clean">
+    <antcall target="call-for-all">
+      <param name="target.name" value="continuous-sonar"/>
+    </antcall>
+  </target>
+
+  <target name="build-testless" depends="install-antcontrib,subfloor.clean">
+    <antcall target="call-for-all">
+      <param name="target.name" value="subfloor.build-testless"/>
+    </antcall>
+  </target>
+
+  <target name="continuous-testless" depends="install-antcontrib,subfloor.clean">
+    <antcall target="call-for-all">
+      <param name="target.name" value="continuous-testless"/>
+    </antcall>
+  </target>
+
+
 
   <!--=======================================================================
         create-dot-classpath
@@ -548,8 +576,8 @@
     <javac fork="true"
            srcdir="${test}"
            destdir="${testClasses}"
-           target="7"
-           source="6"
+           target="${javac.target}"
+           source="${javac.source}"
            deprecation="true"
            debug="true"
            includeantruntime="false"
@@ -569,7 +597,7 @@
 
 
   <target name="tests-all"
-          depends="tests-clean, tests-stage, tests-core, tests-trans, tests-run, tests-blackbox"/>
+          depends="tests-clean, tests-stage, tests-core, tests-trans, tests-run, tests-blackbox, tests-concurrency"/>
 
   <target name="tests-stage-init" depends="init, resolve, init-tests, init-test-reports">
     <mkdir dir="${dist.dir}"/>
@@ -625,6 +653,7 @@
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.database.ReleaseSavePointTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.database.TablespaceDDLFragmentTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.database.VerticaDatabaseMetaTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.database.util.DatabaseUtilTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.row.ValueDataUtilTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.imp.rule.DatabaseConfigurationImportRuleTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.imp.rule.JobHasANoteImportRuleTest" haltonerror="false"/>
@@ -639,7 +668,6 @@
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.repository.KettleFileRepositoryTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.repository.RepositoryImportExporterApiTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.repository.RepositoryUnitTest" haltonerror="false"/>
-      <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.sql.SqlTransMetaTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.logging.MetricsTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.parameters.ParameterSimpleTransTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.plugins.PluginRegistryTest" haltonerror="false"/>
@@ -649,7 +677,7 @@
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.resource.ResourceDependencyTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.resource.ResourceExportTest" haltonerror="false"/>
     </junit>
-  	
+
     <junitreport todir="${testreports.html.dir}">
       <fileset dir="${testreports.xml.dir}">
         <include name="TEST-*.xml"/>
@@ -686,7 +714,8 @@
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.NormalExecutionTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.RowProducerTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.TransSingleThreadTest" haltonerror="false"/>
-      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.WordCountSingleThreadTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.TransMeta_PDI_13634_Test" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.WordCountSampleTest" haltonerror="false"/>
 
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.addsequence.AddSequenceTest"
             haltonerror="false"/>
@@ -697,6 +726,7 @@
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.combinationlookup.CombinationLookupTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.constant.ConstantTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.cubeinput.CubeInputStepIntTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.calculator.CalculatorTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.csvinput.CsvInput1Test"
@@ -723,6 +753,7 @@
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.excelinput.PoiWorkBookTest"
             haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.excelinput.StaxWorkBookTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.execsqlrow.ExecSQLRowTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.getxmldata.GetXMLDataTest"
@@ -731,18 +762,22 @@
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.insertupdate.InsertUpdateTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.janino.JaninoStepTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.javafilter.JavaFilterTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.jsonoutput.JsonOutputTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.mailvalidator.MailValidationTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.mapping.RunMapping" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.mapping.MappingTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.mergerows.MergeRowsTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.metainject.MetaInjectTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.nullif.NullIfTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.numberrange.NumberRangeRuleTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.numberrange.NumberRangeSetTest"
+            haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.pentahoreporting.PentahoReportingOutputTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.regexeval.RegexEvalTest"
             haltonerror="false"/>
@@ -753,6 +788,8 @@
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.scriptvalues_mod.JavaScriptStringTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.sort.SortRowsTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.sftpput.SFTPPutIntegrationTest"
+            haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.tableoutput.TableOutputTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.tableinput.TableInputTest"
@@ -761,18 +798,23 @@
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.textfileoutput.TextFileOutputTests"
             haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.textfileoutput.TextFileOutputSplittingTest"
+            haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.unique.UniqueRowsTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.update.UpdateTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.valuemapper.ValueMapperTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.splitfieldtorows.SplitFieldToRowsTest"
             haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.xsdvalidator.XsdValidatorIntTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.xslt.XsltTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.core.database.SequenceMetaTests" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.terafast.FastloadControlBuilderTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.gpload.GPLoadTest"
             haltonerror="false"/>
+    	<test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.rest.RestInputTest"
+    	            haltonerror="false"/>
     </junit>
     <junitreport todir="${testreports.html.dir}">
       <fileset dir="${testreports.xml.dir}">
@@ -805,6 +847,7 @@
       <formatter type="xml"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.JobTrackerExecutionTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.SimultaneousJobsAppenderTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.SimpleEvalNullFieldTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.tablecompare.TableCompareTest" haltonerror="false" />
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.blackbox.BlackBoxTests" haltonerror="false" />
     </junit>
@@ -845,9 +888,16 @@
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.cluster.SlaveSequenceTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.trans.steps.concatfields.ConcatFields_PDI_10856_Test" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.www.CarteTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.entries.sftp.SFTPClientTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.entries.sftp.JobEntrySFTPTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.entries.ftpsget.FTPSConnectionTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.entries.ftpsget.JobEntryFTPSGetTest" haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.entries.ftpput.JobEntryFTPPUTTest" haltonerror="false"/>
 
       <!-- Some extra things to run -->
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.entries.copyfiles.CopyFilesTest"
+            haltonerror="false"/>
+      <test todir="${testreports.xml.dir}" name="org.pentaho.di.job.entries.trans.JobEntryTransIntTest"
             haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.kitchen.KitchenTest" haltonerror="false"/>
       <test todir="${testreports.xml.dir}" name="org.pentaho.di.www.TransformationMapTest" haltonerror="false"/>
@@ -862,6 +912,43 @@
   </target>
 
   <!--
+  ===========================================
+     tests : junit concurrency tests
+  ============================================
+  -->
+  <target name="tests-concurrency" depends="compile-integration-tests" description="Execute the concurrency tests">
+
+    <junit printsummary="no" dir="${basedir}/${dist.dir}" fork="yes" forkmode="perTest"
+           jvm="java" maxmemory="512M" showoutput="yes">
+      <classpath>
+        <fileset dir="${dist.dir}/${lib.dir}" includes="kettle-core*.jar,kettle-engine*.jar"/>
+        <fileset dir="test/libext/" includes="*.jar"/>
+        <pathelement path="${testClasses}"/>
+        <pathelement path="${dist.dir}/testfiles"/>
+        <fileset dir="${dist.dir}/${lib.dir}" includes="*.jar *.zip"/>
+        <fileset dir="${dist.dir}/${libswt}" includes="*.jar *.zip"/>
+        <fileset dir="${dist.dir}/${libswt}/win32/" includes="*.jar *.zip"/>
+      </classpath>
+
+      <formatter type="xml"/>
+
+      <batchtest todir="${testreports.xml.dir}" haltonerror="false">
+        <fileset dir="${testsrc.dir}">
+          <include name="org/pentaho/di/concurrency/**/*Test.java"/>
+        </fileset>
+      </batchtest>
+    </junit>
+
+    <junitreport todir="${testreports.html.dir}">
+      <fileset dir="${testreports.xml.dir}">
+        <include name="TEST-*.xml"/>
+      </fileset>
+      <report format="frames" todir="${testreports.html.dir}"/>
+    </junitreport>
+
+  </target>
+
+  <!--
     =============================================================================
        checkstyle.xml-report : Produces machine-readable xml Checkstyle report
     =============================================================================
@@ -872,7 +959,7 @@
     <mkdir dir="${checkstyle.dir}/lib"/>
     <ivy-resolve directory="${checkstyle.lib.dir}" ivyfile="${ivyfile}" conf="checkstyle"/>
 
-    <taskdef resource="checkstyletask.properties">
+    <taskdef resource="com/puppycrawl/tools/checkstyle/ant/checkstyle-ant-task.properties">
       <classpath>
         <fileset dir="${checkstyle.lib.dir}" includes="*.jar"/>
       </classpath>

@@ -28,7 +28,7 @@ import java.lang.annotation.Annotation;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.exception.KettlePluginException;
 import org.pentaho.di.core.exception.KettleXMLException;
@@ -156,7 +156,8 @@ public class LoggingPluginType extends BasePluginType implements PluginTypeInter
 
   @Override
   protected String extractName( Annotation annotation ) {
-    return null;
+    String name = ( (LoggingPlugin) annotation ).name();
+    return Const.isEmpty( name ) ? extractID( annotation ) : name;
   }
 
   @Override
@@ -166,7 +167,7 @@ public class LoggingPluginType extends BasePluginType implements PluginTypeInter
 
   @Override
   protected boolean extractSeparateClassLoader( Annotation annotation ) {
-    return false;
+    return ( (LoggingPlugin) annotation ).isSeparateClassLoaderNeeded();
   }
 
   @Override

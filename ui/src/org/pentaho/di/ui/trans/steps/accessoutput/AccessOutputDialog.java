@@ -26,7 +26,7 @@ import java.io.File;
 import java.util.Set;
 
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.ModifyEvent;
 import org.eclipse.swt.events.ModifyListener;
@@ -292,6 +292,7 @@ public class AccessOutputDialog extends BaseStepDialog implements StepDialogInte
     fdCommitSize.right = new FormAttachment( 100, 0 );
     fdCommitSize.top = new FormAttachment( wCreateTable, margin );
     wCommitSize.setLayoutData( fdCommitSize );
+    wCommitSize.addModifyListener( lsMod );
 
     // Add File to the result files name
     wlAddToResult = new Label( shell, SWT.RIGHT );

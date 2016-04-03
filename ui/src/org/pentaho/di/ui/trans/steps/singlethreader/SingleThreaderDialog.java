@@ -24,7 +24,7 @@ package org.pentaho.di.ui.trans.steps.singlethreader;
 
 import java.io.IOException;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.ModifyEvent;
 import org.eclipse.swt.events.ModifyListener;
@@ -1022,6 +1022,8 @@ public class SingleThreaderDialog extends BaseStepDialog implements StepDialogIn
     TransMeta newTransMeta = new TransMeta();
 
     newTransMeta.getDatabases().addAll( transMeta.getDatabases() );
+    newTransMeta.setRepository( transMeta.getRepository() );
+    newTransMeta.setRepositoryDirectory( transMeta.getRepositoryDirectory() );
 
     // Pass some interesting settings from the parent transformations...
     //

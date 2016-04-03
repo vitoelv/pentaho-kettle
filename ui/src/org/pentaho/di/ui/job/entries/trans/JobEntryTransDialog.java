@@ -22,7 +22,7 @@
 
 package org.pentaho.di.ui.job.entries.trans;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CCombo;
 import org.eclipse.swt.custom.CTabFolder;
@@ -1160,6 +1160,7 @@ public class JobEntryTransDialog extends JobEntryDialog implements JobEntryDialo
 
     newTransMeta.getDatabases().addAll( jobMeta.getDatabases() );
     newTransMeta.setRepository( rep );
+    newTransMeta.setRepositoryDirectory( jobMeta.getRepositoryDirectory() );
     newTransMeta.setMetaStore( metaStore );
 
     TransDialog transDialog = new TransDialog( shell, SWT.NONE, newTransMeta, rep );
@@ -1175,6 +1176,7 @@ public class JobEntryTransDialog extends JobEntryDialog implements JobEntryDialo
           saved = spoon.saveToRepository( newTransMeta, false );
           if ( rep.getRepositoryMeta().getRepositoryCapabilities().supportsReferences() ) {
             specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_REFERENCE;
+            referenceObjectId = newTransMeta.getObjectId();
           } else {
             specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_NAME;
           }
@@ -1263,7 +1265,7 @@ public class JobEntryTransDialog extends JobEntryDialog implements JobEntryDialo
       RepositoryElementMetaInterface repositoryObject = sod.getRepositoryObject();
       if ( repositoryObject != null ) {
         specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_REFERENCE;
-        getByReferenceData( repositoryObject );
+        updateByReferenceField( repositoryObject );
         referenceObjectId = repositoryObject.getObjectId();
         setRadioButtons();
       }
@@ -1489,9 +1491,7 @@ public class JobEntryTransDialog extends JobEntryDialog implements JobEntryDialo
   private void getByReferenceData( ObjectId transObjectId ) {
     try {
       RepositoryObject transInf = rep.getObjectInformation( transObjectId, RepositoryObjectType.TRANSFORMATION );
-      if ( transInf != null ) {
-        getByReferenceData( transInf );
-      }
+      updateByReferenceField( transInf );
     } catch ( KettleException e ) {
       new ErrorDialog( shell,
         BaseMessages.getString( PKG, "JobEntryTransDialog.Exception.UnableToReferenceObjectId.Title" ),
@@ -1499,12 +1499,11 @@ public class JobEntryTransDialog extends JobEntryDialog implements JobEntryDialo
     }
   }
 
-  private void getByReferenceData( RepositoryElementMetaInterface transInf ) {
-    String path = transInf.getRepositoryDirectory().getPath();
-    if ( !path.endsWith( "/" ) ) {
-      path += "/";
+  private void updateByReferenceField( RepositoryElementMetaInterface element ) {
+    String path = getPathOf( element );
+    if ( path == null ) {
+      path = "";
     }
-    path += transInf.getName();
     wByReference.setText( path );
   }
 

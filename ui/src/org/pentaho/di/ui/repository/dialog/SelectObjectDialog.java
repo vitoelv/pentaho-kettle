@@ -160,7 +160,7 @@ public class SelectObjectDialog extends Dialog {
     shell =
       new Shell( parent, SWT.DIALOG_TRIM | SWT.APPLICATION_MODAL | SWT.SHEET | SWT.RESIZE | SWT.MIN | SWT.MAX );
     props.setLook( shell );
-    shell.setImage( GUIResource.getInstance().getImageFolderConnections() );
+    shell.setImage( GUIResource.getInstance().getImageSpoon() );
 
     FormLayout formLayout = new FormLayout();
     formLayout.marginWidth = Const.FORM_MARGIN;
@@ -172,6 +172,7 @@ public class SelectObjectDialog extends Dialog {
     int margin = Const.MARGIN;
 
     ToolBar treeTb = new ToolBar( shell, SWT.HORIZONTAL | SWT.FLAT );
+    props.setLook( treeTb );
 
     wfilter = new ToolItem( treeTb, SWT.SEPARATOR );
     searchText = new Text( treeTb, SWT.SEARCH | SWT.CANCEL );
@@ -304,7 +305,7 @@ public class SelectObjectDialog extends Dialog {
 
     wTree.addSelectionListener( new SelectionAdapter() {
       public void widgetSelected( SelectionEvent e ) {
-        wOK.setEnabled( !wTree.getSelection()[0].getForeground().equals( dircolor ) );
+        wOK.setEnabled( !Boolean.TRUE.equals( wTree.getSelection()[0].getData( "isFolder" ) ) );
       }
     } );
 
@@ -437,7 +438,7 @@ public class SelectObjectDialog extends Dialog {
       // display that on the UI otherwise we will hide it
       if ( directoryTree.isRoot() && directoryTree.isVisible() ) {
         ti = new TreeItem( wTree, SWT.NONE );
-        ti.setImage( GUIResource.getInstance().getImageFolderConnections() );
+        ti.setImage( GUIResource.getInstance().getImageFolder() );
         ti.setExpanded( true );
         RepositoryDirectoryUI.getTreeWithNames(
           ti, rep, dircolor, sortColumn, includeDeleted, ascending, showTrans, showJobs, directoryTree,
@@ -446,7 +447,7 @@ public class SelectObjectDialog extends Dialog {
         for ( int i = 0; i < directoryTree.getNrSubdirectories(); i++ ) {
           RepositoryDirectory subdir = directoryTree.getSubdirectory( i );
           ti = new TreeItem( wTree, SWT.NONE );
-          ti.setImage( GUIResource.getInstance().getImageArrow() );
+          ti.setImage( GUIResource.getInstance().getImageFolder() );
           RepositoryDirectoryUI.getTreeWithNames(
             ti, rep, dircolor, sortColumn, includeDeleted, ascending, showTrans, showJobs, subdir, filterString,
             pattern );
@@ -479,7 +480,7 @@ public class SelectObjectDialog extends Dialog {
       TreeItem ti = wTree.getSelection()[0];
 
       // No directory!
-      if ( !ti.getForeground().equals( dircolor ) ) {
+      if ( !Boolean.TRUE.equals( wTree.getSelection()[0].getData( "isFolder" ) ) ) {
         int level = ConstUI.getTreeLevel( ti );
         if ( level > 0 ) {
           repositoryObject = (RepositoryElementMetaInterface) ti.getData();

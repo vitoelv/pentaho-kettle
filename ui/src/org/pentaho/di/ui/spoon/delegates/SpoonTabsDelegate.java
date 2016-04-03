@@ -25,13 +25,14 @@ package org.pentaho.di.ui.spoon.delegates;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.browser.LocationListener;
 import org.eclipse.swt.browser.OpenWindowListener;
 import org.eclipse.swt.browser.WindowEvent;
 import org.eclipse.swt.custom.CTabFolder;
 import org.eclipse.swt.widgets.Composite;
+import org.pentaho.di.base.AbstractMeta;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.EngineMetaInterface;
@@ -81,20 +82,26 @@ public class SpoonTabsDelegate extends SpoonDelegate {
             RepositoryOperation.MODIFY_TRANSFORMATION, RepositoryOperation.MODIFY_JOB );
 
     boolean close = true;
+    boolean canSave = true;
     for ( TabMapEntry entry : collection ) {
       if ( item.equals( entry.getTabItem() ) ) {
         TabItemInterface itemInterface = entry.getObject();
-
-        // Can we close this tab? Only allow users with create content perms to save
-        if ( !itemInterface.canBeClosed() && createPerms ) {
-          int reply = itemInterface.showChangedWarning();
-          if ( reply == SWT.YES ) {
-            close = itemInterface.applyChanges();
-          } else {
-            if ( reply == SWT.CANCEL ) {
-              close = false;
+        if ( itemInterface.getManagedObject() != null
+            && AbstractMeta.class.isAssignableFrom( itemInterface.getManagedObject().getClass() ) ) {
+          canSave = !( (AbstractMeta) itemInterface.getManagedObject() ).hasMissingPlugins();
+        }
+        if ( canSave ) {
+          // Can we close this tab? Only allow users with create content perms to save
+          if ( !itemInterface.canBeClosed() && createPerms ) {
+            int reply = itemInterface.showChangedWarning();
+            if ( reply == SWT.YES ) {
+              close = itemInterface.applyChanges();
             } else {
-              close = true;
+              if ( reply == SWT.CANCEL ) {
+                close = false;
+              } else {
+                close = true;
+              }
             }
           }
         }
@@ -114,7 +121,7 @@ public class SpoonTabsDelegate extends SpoonDelegate {
             spoon.refreshTree();
             // spoon.refreshCoreObjects();
           } else if ( entry.getObject() instanceof SpoonBrowser ) {
-            spoon.closeSpoonBrowser();
+            this.removeTab( entry );
             spoon.refreshTree();
           } else if ( entry.getObject() instanceof Composite ) {
             Composite comp = (Composite) entry.getObject();
@@ -189,15 +196,27 @@ public class SpoonTabsDelegate extends SpoonDelegate {
   }
 
   public boolean addSpoonBrowser( String name, String urlString ) {
-    return addSpoonBrowser( name, urlString, true, null );
+    return addSpoonBrowser( name, urlString, true, null, true );
+  }
+
+  public boolean addSpoonBrowser( String name, String urlString, boolean showControls ) {
+    return addSpoonBrowser( name, urlString, true, null, showControls );
   }
 
   public boolean addSpoonBrowser( String name, String urlString, LocationListener listener ) {
-    boolean ok = addSpoonBrowser( name, urlString, true, listener );
+    boolean ok = addSpoonBrowser( name, urlString, true, listener, true );
     return ok;
   }
 
+  public boolean addSpoonBrowser( String name, String urlString, LocationListener listener, boolean showControls ) {
+    return addSpoonBrowser( name, urlString, true, listener, showControls );
+  }
+
   public boolean addSpoonBrowser( String name, String urlString, boolean isURL, LocationListener listener ) {
+    return addSpoonBrowser( name, urlString, isURL, listener, true );
+  }
+
+  public boolean addSpoonBrowser( String name, String urlString, boolean isURL, LocationListener listener, boolean showControls ) {
     TabSet tabfolder = spoon.tabfolder;
 
     try {
@@ -210,7 +229,7 @@ public class SpoonTabsDelegate extends SpoonDelegate {
       TabMapEntry tabMapEntry = findTabMapEntry( name, ObjectType.BROWSER );
       if ( tabMapEntry == null ) {
         CTabFolder cTabFolder = tabfolder.getSwtTabset();
-        final SpoonBrowser browser = new SpoonBrowser( cTabFolder, spoon, urlString, isURL, true, listener );
+        final SpoonBrowser browser = new SpoonBrowser( cTabFolder, spoon, urlString, isURL, showControls, listener );
 
         browser.getBrowser().addOpenWindowListener( new OpenWindowListener() {
 

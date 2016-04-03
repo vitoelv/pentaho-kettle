@@ -58,9 +58,9 @@ import javax.mail.Transport;
 import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileType;
-import org.apache.commons.vfs.FileUtil;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileType;
+import org.apache.commons.vfs2.FileUtil;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.EvaluatorException;
 import org.mozilla.javascript.Function;
@@ -674,8 +674,8 @@ public class ScriptValuesAddedFunctions extends ScriptableObject {
         } else if ( strType.equals( "wd" ) ) {
           int iOffset = 0;
           while ( iOffset < iValue ) {
-            int day = cal.get( Calendar.DAY_OF_WEEK );
             cal.add( Calendar.DATE, 1 );
+            int day = cal.get( Calendar.DAY_OF_WEEK );
             if ( ( day != Calendar.SATURDAY ) && ( day != Calendar.SUNDAY ) ) {
               iOffset++;
             }

@@ -37,7 +37,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -680,15 +680,16 @@ public class JobEntrySFTP extends JobEntryBase implements Cloneable, JobEntryInt
             logDebug( BaseMessages.getString( PKG, "JobSFTP.Log.GettingFiles", filelist[i], realTargetDirectory ) );
           }
 
-          String targetFilename = realTargetDirectory + Const.FILE_SEPARATOR + filelist[i];
-          sftpclient.get( targetFilename, filelist[i] );
+          FileObject targetFile = KettleVFS.getFileObject(
+            realTargetDirectory + Const.FILE_SEPARATOR + filelist[i], this );
+          sftpclient.get( targetFile, filelist[i] );
           filesRetrieved++;
 
           if ( isaddresult ) {
             // Add to the result files...
             ResultFile resultFile =
               new ResultFile(
-                ResultFile.FILE_TYPE_GENERAL, KettleVFS.getFileObject( targetFilename, this ), parentJob
+                ResultFile.FILE_TYPE_GENERAL, targetFile, parentJob
                   .getJobname(), toString() );
             result.getResultFiles().put( resultFile.getFile().toString(), resultFile );
             if ( log.isDetailed() ) {

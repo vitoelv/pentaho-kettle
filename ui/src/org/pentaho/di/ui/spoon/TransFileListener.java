@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -28,15 +28,22 @@ import org.eclipse.jface.dialogs.MessageDialogWithToggle;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.EngineMetaInterface;
 import org.pentaho.di.core.LastUsedFile;
+import org.pentaho.di.core.ObjectLocationSpecificationMethod;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleMissingPluginsException;
+import org.pentaho.di.core.extension.ExtensionPointHandler;
+import org.pentaho.di.core.extension.KettleExtensionPoint;
 import org.pentaho.di.core.gui.OverwritePrompter;
 import org.pentaho.di.core.variables.Variables;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.TransMeta;
+import org.pentaho.di.trans.step.StepMeta;
+import org.pentaho.di.trans.steps.jobexecutor.JobExecutorMeta;
+import org.pentaho.di.trans.steps.transexecutor.TransExecutorMeta;
 import org.pentaho.di.ui.core.PropsUI;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
 import org.pentaho.di.ui.core.gui.GUIResource;
+import org.pentaho.di.ui.trans.steps.missing.MissingTransDialog;
 import org.w3c.dom.Node;
 
 public class TransFileListener implements FileListener {
@@ -47,6 +54,9 @@ public class TransFileListener implements FileListener {
     final Spoon spoon = Spoon.getInstance();
     final PropsUI props = PropsUI.getInstance();
     try {
+      // Call extension point(s) before the file has been opened
+      ExtensionPointHandler.callExtensionPoint( spoon.getLog(), KettleExtensionPoint.TransBeforeOpen.id, fname );
+
       TransMeta transMeta = new TransMeta();
       transMeta.loadXML(
         transNode, fname, spoon.getMetaStore(), spoon.getRepository(), true, new Variables(),
@@ -57,7 +67,7 @@ public class TransFileListener implements FileListener {
             Object[] res =
               spoon.messageDialogWithToggle(
                 BaseMessages.getString( PKG, "System.Button.Yes" ), null, message, Const.WARNING,
-                new String[] {
+                new String[]{
                   BaseMessages.getString( PKG, "System.Button.Yes" ),
                   BaseMessages.getString( PKG, "System.Button.No" ) }, 1, rememberText, !props
                   .askAboutReplacingDatabaseConnections() );
@@ -69,18 +79,40 @@ public class TransFileListener implements FileListener {
           }
 
         } );
+
+      if ( transMeta.hasMissingPlugins() ) {
+        StepMeta stepMeta = transMeta.getStep( 0 );
+        MissingTransDialog missingDialog =
+          new MissingTransDialog( spoon.getShell(), transMeta.getMissingTrans(), stepMeta.getStepMetaInterface(),
+            transMeta, stepMeta.getName() );
+        if ( missingDialog.open() == null ) {
+          return true;
+        }
+      }
       transMeta.setRepositoryDirectory( spoon.getDefaultSaveLocation( transMeta ) );
       transMeta.setRepository( spoon.getRepository() );
       transMeta.setMetaStore( spoon.getMetaStore() );
       spoon.setTransMetaVariables( transMeta );
       spoon.getProperties().addLastFile( LastUsedFile.FILE_TYPE_TRANSFORMATION, fname, null, false, null );
       spoon.addMenuLast();
-      if ( !importfile ) {
+
+      // If we are importing into a repository we need to fix 
+      // up the references to other jobs and transformations
+      // if any exist.
+      if ( importfile ) {
+        if ( spoon.getRepository() != null ) {
+          transMeta = fixLinks( transMeta );
+        }
+      } else {
         transMeta.clearChanged();
       }
+
       transMeta.setFilename( fname );
       spoon.addTransGraph( transMeta );
       spoon.sharedObjectsFileMap.put( transMeta.getSharedObjects().getFilename(), transMeta.getSharedObjects() );
+
+      // Call extension point(s) now that the file has been opened
+      ExtensionPointHandler.callExtensionPoint( spoon.getLog(), KettleExtensionPoint.TransAfterOpen.id, transMeta );
 
       SpoonPerspectiveManager.getInstance().activatePerspective( MainSpoonPerspective.class );
       spoon.refreshTree();
@@ -91,10 +123,55 @@ public class TransFileListener implements FileListener {
     } catch ( KettleException e ) {
       new ErrorDialog(
         spoon.getShell(), BaseMessages.getString( PKG, "Spoon.Dialog.ErrorOpening.Title" ), BaseMessages
-          .getString( PKG, "Spoon.Dialog.ErrorOpening.Message" )
-          + fname, e );
+        .getString( PKG, "Spoon.Dialog.ErrorOpening.Message" )
+        + fname, e );
     }
     return false;
+  }
+
+  private TransMeta fixLinks( TransMeta transMeta ) {
+    transMeta = processLinkedJobs( transMeta );
+    transMeta = processLinkedTrans( transMeta );
+
+    return transMeta;
+  }
+
+  protected TransMeta processLinkedJobs( TransMeta transMeta ) {
+    for ( StepMeta stepMeta : transMeta.getSteps() ) {
+      if ( stepMeta.getStepID().equalsIgnoreCase( "JobExecutor" ) ) {
+        JobExecutorMeta jem = (JobExecutorMeta) stepMeta.getStepMetaInterface();
+        ObjectLocationSpecificationMethod specMethod = jem.getSpecificationMethod();
+        // If the reference is by filename, change it to Repository By Name. Otherwise it's fine so leave it alone
+        if ( specMethod == ObjectLocationSpecificationMethod.FILENAME ) {
+          jem.setSpecificationMethod( ObjectLocationSpecificationMethod.REPOSITORY_BY_NAME );
+          String filename = jem.getFileName();
+          String jobname = filename.substring( filename.lastIndexOf( "/" ) + 1, filename.lastIndexOf( '.' ) );
+          String directory = filename.substring( 0, filename.lastIndexOf( "/" ) );
+          jem.setJobName( jobname );
+          jem.setDirectoryPath( directory );
+        }
+      }
+    }
+    return transMeta;
+  }
+
+  protected TransMeta processLinkedTrans( TransMeta transMeta ) {
+    for ( StepMeta stepMeta : transMeta.getSteps() ) {
+      if ( stepMeta.getStepID().equalsIgnoreCase( "TransExecutor" ) ) {
+        TransExecutorMeta tem = (TransExecutorMeta) stepMeta.getStepMetaInterface();
+        ObjectLocationSpecificationMethod specMethod = tem.getSpecificationMethod();
+        // If the reference is by filename, change it to Repository By Name. Otherwise it's fine so leave it alone
+        if ( specMethod == ObjectLocationSpecificationMethod.FILENAME ) {
+          tem.setSpecificationMethod( ObjectLocationSpecificationMethod.REPOSITORY_BY_NAME );
+          String filename = tem.getFileName();
+          String jobname = filename.substring( filename.lastIndexOf( "/" ) + 1, filename.lastIndexOf( '.' ) );
+          String directory = filename.substring( 0, filename.lastIndexOf( "/" ) );
+          tem.setTransName( jobname );
+          tem.setDirectoryPath( directory );
+        }
+      }
+    }
+    return transMeta;
   }
 
   public boolean save( EngineMetaInterface meta, String fname, boolean export ) {
@@ -105,7 +182,24 @@ public class TransFileListener implements FileListener {
     } else {
       lmeta = meta;
     }
-    return spoon.saveMeta( lmeta, fname );
+
+    try {
+      ExtensionPointHandler.callExtensionPoint( spoon.getLog(), KettleExtensionPoint.TransBeforeClose.id, lmeta );
+    } catch ( KettleException e ) {
+      // fails gracefully
+    }
+
+    boolean saveStatus = spoon.saveMeta( lmeta, fname );
+
+    if ( saveStatus ) {
+      try {
+        ExtensionPointHandler.callExtensionPoint( spoon.getLog(), KettleExtensionPoint.TransAfterClose.id, lmeta );
+      } catch ( KettleException e ) {
+        // fails gracefully
+      }
+    }
+
+    return saveStatus;
   }
 
   public void syncMetaName( EngineMetaInterface meta, String name ) {
@@ -121,14 +215,14 @@ public class TransFileListener implements FileListener {
   }
 
   public boolean acceptsXml( String nodeName ) {
-    if ( nodeName.equals( "transformation" ) ) {
+    if ( "transformation".equals( nodeName ) ) {
       return true;
     }
     return false;
   }
 
   public String[] getFileTypeDisplayNames( Locale locale ) {
-    return new String[] { "Transformations", "XML" };
+    return new String[]{ "Transformations", "XML" };
   }
 
   public String getRootNodeName() {
@@ -136,7 +230,7 @@ public class TransFileListener implements FileListener {
   }
 
   public String[] getSupportedExtensions() {
-    return new String[] { "ktr", "xml" };
+    return new String[]{ "ktr", "xml" };
   }
 
 }

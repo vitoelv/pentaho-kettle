@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -55,6 +55,7 @@ import org.pentaho.di.trans.steps.symmetriccrypto.symmetriccryptotrans.Symmetric
 import org.pentaho.di.ui.core.PropsUI;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
 import org.pentaho.di.ui.core.widget.LabelTextVar;
+import org.pentaho.di.ui.core.widget.PasswordTextVar;
 import org.pentaho.di.ui.core.widget.TextVar;
 import org.pentaho.di.ui.trans.step.BaseStepDialog;
 
@@ -273,10 +274,9 @@ public class SymmetricCryptoTransDialog extends BaseStepDialog implements StepDi
     fdlSecretKey.right = new FormAttachment( middle, -margin );
     wlSecretKey.setLayoutData( fdlSecretKey );
 
-    wSecretKey = new TextVar( transMeta, wCryptoSettings, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
+    wSecretKey = new PasswordTextVar( transMeta, wCryptoSettings, SWT.SINGLE | SWT.LEFT | SWT.BORDER,
+      BaseMessages.getString( PKG, "SymmetricCryptoTransDialog.SecretKey.Tooltip" ) );
     props.setLook( wSecretKey );
-    wSecretKey.setToolTipText( BaseMessages.getString( PKG, "SymmetricCryptoTransDialog.SecretKey.Tooltip" ) );
-    wSecretKey.setEchoChar( '*' );
     wSecretKey.addModifyListener( lsMod );
     FormData fdSecretKey = new FormData();
     fdSecretKey.left = new FormAttachment( middle, margin );
@@ -535,14 +535,6 @@ public class SymmetricCryptoTransDialog extends BaseStepDialog implements StepDi
 
     wStepname.addSelectionListener( lsDef );
 
-    // Whenever something changes, set the tooltip to the expanded version
-    // of the filename:
-    wSecretKey.addModifyListener( new ModifyListener() {
-      public void modifyText( ModifyEvent e ) {
-        wSecretKey.setToolTipText( transMeta.environmentSubstitute( wSecretKey.getText() ) );
-      }
-    } );
-
     wTabFolder.setSelection( 0 );
 
     // Set the shell size, based upon previous time...
@@ -617,8 +609,8 @@ public class SymmetricCryptoTransDialog extends BaseStepDialog implements StepDi
   public void getData() {
     wOperation.setText( SymmetricCryptoTransMeta.getOperationTypeDesc( input.getOperationType() ) );
     wAlgorithm.setText( Const.NVL( input.getAlgorithm(), SymmetricCryptoMeta.TYPE_ALGORYTHM_CODE[0] ) );
-    if ( input.getMessageFied() != null ) {
-      wMessage.setText( input.getMessageFied() );
+    if ( input.getMessageField() != null ) {
+      wMessage.setText( input.getMessageField() );
     }
     if ( input.getResultfieldname() != null ) {
       wResultField.setText( input.getResultfieldname() );

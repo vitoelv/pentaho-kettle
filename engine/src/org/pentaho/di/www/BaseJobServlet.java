@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -102,10 +102,13 @@ public abstract class BaseJobServlet extends BodyHttpServlet {
       } );
     }
 
-    synchronized ( getJobMap() ) {
-      getJobMap().addJob( job.getJobname(), carteObjectId, job, jobConfiguration );
+    getJobMap().addJob( job.getJobname(), carteObjectId, job, jobConfiguration );
+
+    final Long passedBatchId = jobExecutionConfiguration.getPassedBatchId();
+    if ( passedBatchId != null ) {
+      job.setPassedBatchId( passedBatchId );
     }
-    
+
     return job;
   }
 
@@ -167,7 +170,11 @@ public abstract class BaseJobServlet extends BodyHttpServlet {
         }
       } );
     }
-    
+    final Long passedBatchId = transExecutionConfiguration.getPassedBatchId();
+    if ( passedBatchId != null ) {
+      trans.setPassedBatchId( passedBatchId );
+    }
+
     return trans;
   }
 
@@ -196,7 +203,7 @@ public abstract class BaseJobServlet extends BodyHttpServlet {
     }
     jobMeta.activateParameters();
   }
-  
+
   private SimpleLoggingObject getServletLogging( final String carteObjectId, final LogLevel level ) {
     SimpleLoggingObject servletLoggingObject =
         new SimpleLoggingObject( getContextPath(), LoggingObjectType.CARTE, null );

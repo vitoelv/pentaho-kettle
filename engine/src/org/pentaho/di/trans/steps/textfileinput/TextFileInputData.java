@@ -23,13 +23,13 @@
 package org.pentaho.di.trans.steps.textfileinput;
 
 import java.io.InputStreamReader;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.RowSet;
 import org.pentaho.di.core.compress.CompressionInputStream;
 import org.pentaho.di.core.fileinput.FileInputList;
@@ -42,6 +42,7 @@ import org.pentaho.di.trans.step.errorhandling.FileErrorHandler;
 /**
  * @author Matt
  * @since 22-jan-2005
+ * @deprecated replaced by implementation in the ...steps.fileinput.text package
  */
 public class TextFileInputData extends BaseStepData implements StepDataInterface {
 
@@ -137,7 +138,8 @@ public class TextFileInputData extends BaseStepData implements StepDataInterface
   public TextFileInputData() {
     super();
 
-    lineBuffer = new ArrayList<TextFileLine>();
+    // linked list is better, as usually .remove(0) is applied to this list
+    lineBuffer = new LinkedList<TextFileLine>();
 
     nr_repeats = 0;
     previous_row = null;

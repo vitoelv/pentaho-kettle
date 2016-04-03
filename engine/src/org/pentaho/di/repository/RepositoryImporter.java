@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import javax.xml.parsers.DocumentBuilder;
+
 import org.pentaho.di.base.AbstractMeta;
 import org.pentaho.di.cluster.ClusterSchema;
 import org.pentaho.di.cluster.SlaveServer;
@@ -42,6 +44,7 @@ import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleMissingPluginsException;
 import org.pentaho.di.core.exception.KettleXMLException;
+import org.pentaho.di.core.exception.LookupReferencesException;
 import org.pentaho.di.core.gui.HasOverwritePrompter;
 import org.pentaho.di.core.gui.OverwritePrompter;
 import org.pentaho.di.core.gui.SpoonFactory;
@@ -62,11 +65,10 @@ import org.pentaho.di.shared.SharedObjects;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.steps.mapping.MappingMeta;
+import org.pentaho.di.trans.steps.metainject.MetaInjectMeta;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.xml.sax.SAXParseException;
-
-import javax.xml.parsers.DocumentBuilder;
 
 public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
   public static final String IMPORT_ASK_ABOUT_REPLACE_DB = "IMPORT_ASK_ABOUT_REPLACE_DB";
@@ -85,6 +87,8 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
 
   private boolean overwrite;
   private boolean askOverwrite = true;
+  // Ask Before Replacing Objects property handler
+  private boolean askReplace;
 
   private String versionComment;
 
@@ -133,10 +137,18 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
   }
 
   private boolean getPromptResult( String message, String rememberText, String rememberPropertyName ) {
-    if ( isRemembered( rememberPropertyName ) ) {
-      return rememberPropertyNamesToOverwrite.contains( rememberPropertyName );
+    boolean result = false;
+    // There is nothing to remember in case of Ask Before Replacing option is turned off.
+    // Thus is returned value of Replace existing objects checkbox
+    if ( !askReplace ) {
+      result = overwritePrompter.overwritePrompt( message, rememberText, rememberPropertyName );
+      return result;
     }
-    boolean result = overwritePrompter.overwritePrompt( message, rememberText, rememberPropertyName );
+    if ( isRemembered( rememberPropertyName ) ) {
+      result = rememberPropertyNamesToOverwrite.contains( rememberPropertyName );
+      return result;
+    }
+    result = overwritePrompter.overwritePrompt( message, rememberText, rememberPropertyName );
     // Save result so we'll know what to return if the user selects to remember
     if ( result ) {
       rememberPropertyNamesToOverwrite.add( rememberPropertyName );
@@ -159,7 +171,7 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
         System.getProperty( Const.KETTLE_COMPATIBILITY_IMPORT_PATH_ADDITION_ON_VARIABLES, "N" );
     this.needToCheckPathForVariables = "N".equalsIgnoreCase( importPathCompatibility );
 
-    boolean askReplace = Props.getInstance().askAboutReplacingDatabaseConnections();
+    askReplace = Props.getInstance().askAboutReplacingDatabaseConnections();
 
     if ( askReplace ) {
       if ( feedback instanceof HasOverwritePrompter ) {
@@ -222,28 +234,18 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
       }
 
       // Correct those jobs and transformations that contain references to other objects.
-      //
-      for ( RepositoryObject ro : referencingObjects ) {
-        if ( ro.getObjectType() == RepositoryObjectType.TRANSFORMATION ) {
-          TransMeta transMeta = rep.loadTransformation( ro.getObjectId(), null );
-          try {
-            transMeta.lookupRepositoryReferences( rep );
-          } catch ( KettleException e ) {
-            // log and continue; might fail from exports performed before PDI-5294
-            feedback.addLog( BaseMessages.getString( PKG, "RepositoryImporter.LookupRepoRefsError.Log", transMeta
-                .getName() ) );
-          }
-          rep.save( transMeta, "import object reference specification", null );
-        } else if ( ro.getObjectType() == RepositoryObjectType.JOB ) {
-          JobMeta jobMeta = rep.loadJob( ro.getObjectId(), null );
-          try {
-            jobMeta.lookupRepositoryReferences( rep );
-          } catch ( KettleException e ) {
-            // log and continue; might fail from exports performed before PDI-5294
-            feedback.addLog( BaseMessages.getString( PKG, "RepositoryImporter.LookupRepoRefsError.Log", jobMeta
-                .getName() ) );
-          }
-          rep.save( jobMeta, "import object reference specification", null );
+      for ( RepositoryObject repoObject : referencingObjects ) {
+        switch ( repoObject.getObjectType() ) {
+          case TRANSFORMATION:
+            TransMeta transMeta = rep.loadTransformation( repoObject.getObjectId(), null );
+            saveTransformationToRepo( transMeta, feedback );
+            break;
+          case JOB:
+            JobMeta jobMeta = rep.loadJob( repoObject.getObjectId(), null );
+            saveJobToRepo( jobMeta, feedback );
+            break;
+          default:
+            throw new KettleException( BaseMessages.getString( PKG, "RepositoryImporter.ErrorDetectFileType" ) );
         }
       }
 
@@ -261,7 +263,7 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
   /**
    * Load the shared objects up front, replace them in the xforms/jobs loaded from XML. We do this for performance
    * reasons.
-   * 
+   *
    * @throws KettleException
    */
   protected void loadSharedObjects() throws KettleException {
@@ -296,7 +298,7 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
 
   /**
    * Validates the repository element that is about to get imported against the list of import rules.
-   * 
+   *
    * @param importRules
    *          import rules to validate against.
    * @param subject
@@ -569,7 +571,10 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
     replaceSharedObjects( (AbstractMeta) transMeta );
   }
 
-  private void patchMappingSteps( TransMeta transMeta ) {
+  /**
+   * package-local visibility for testing purposes
+   */
+  void patchTransSteps( TransMeta transMeta ) {
     for ( StepMeta stepMeta : transMeta.getSteps() ) {
       if ( stepMeta.isMapping() ) {
         MappingMeta mappingMeta = (MappingMeta) stepMeta.getStepMetaInterface();
@@ -580,6 +585,17 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
           }
           String mappingMetaPath = resolvePath( baseDirectory.getPath(), mappingMeta.getDirectoryPath() );
           mappingMeta.setDirectoryPath( mappingMetaPath );
+        }
+      }
+      if ( stepMeta.isEtlMetaInject() ) {
+        MetaInjectMeta metaInjectMeta = (MetaInjectMeta) stepMeta.getStepMetaInterface();
+        if ( metaInjectMeta.getSpecificationMethod() == ObjectLocationSpecificationMethod.REPOSITORY_BY_NAME ) {
+          if ( transDirOverride != null ) {
+            metaInjectMeta.setDirectoryPath( transDirOverride );
+            continue;
+          }
+          String mappingMetaPath = resolvePath( baseDirectory.getPath(), metaInjectMeta.getDirectoryPath() );
+          metaInjectMeta.setDirectoryPath( mappingMetaPath );
         }
       }
     }
@@ -612,7 +628,10 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
     }
   }
 
-  private String resolvePath( String rootPath, String entryPath ) {
+  /**
+   * package-local visibility for testing purposes
+   */
+  String resolvePath( String rootPath, String entryPath ) {
     String extraPath = Const.NVL( entryPath, "/" );
     if ( needToCheckPathForVariables() ) {
       if ( containsVariables( entryPath ) ) {
@@ -645,7 +664,7 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
   }
 
   /**
-   * 
+   *
    * @param transnode
    *          The XML DOM node to read the transformation from
    * @return false if the import should be canceled.
@@ -700,7 +719,7 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
       replaceSharedObjects( transMeta );
       transMeta.setObjectId( existingId );
       transMeta.setRepositoryDirectory( targetDirectory );
-      patchMappingSteps( transMeta );
+      patchTransSteps( transMeta );
 
       try {
         // Keep info on who & when this transformation was created...
@@ -1025,4 +1044,32 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
   public String getVersionComment() {
     return versionComment;
   }
+
+  private void saveTransformationToRepo( TransMeta transMeta, RepositoryImportFeedbackInterface feedback )
+      throws KettleException {
+    try {
+      transMeta.lookupRepositoryReferences( rep );
+    } catch ( LookupReferencesException e ) {
+      // log and continue; might fail from exports performed before PDI-5294
+      feedback.addLog( BaseMessages.getString( PKG, "RepositoryImporter.LookupRepoRefsError.Log", transMeta.getName(),
+          RepositoryObjectType.TRANSFORMATION ) );
+      feedback.addLog( BaseMessages
+          .getString( PKG, "RepositoryImporter.LookupRepoRefsError.Log.Cause", e.objectTypePairsToString() ) );
+    }
+    rep.save( transMeta, "import object reference specification", null );
+  }
+
+  private void saveJobToRepo( JobMeta jobMeta, RepositoryImportFeedbackInterface feedback ) throws KettleException {
+    try {
+      jobMeta.lookupRepositoryReferences( rep );
+    } catch ( LookupReferencesException e ) {
+      // log and continue; might fail from exports performed before PDI-5294
+      feedback.addLog( BaseMessages.getString( PKG, "RepositoryImporter.LookupRepoRefsError.Log", jobMeta.getName(),
+          RepositoryObjectType.JOB ) );
+      feedback.addLog( BaseMessages
+          .getString( PKG, "RepositoryImporter.LookupRepoRefsError.Log.Cause", e.objectTypePairsToString() ) );
+    }
+    rep.save( jobMeta, "import object reference specification", null );
+  }
+
 }

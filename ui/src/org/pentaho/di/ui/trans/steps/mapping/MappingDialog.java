@@ -22,7 +22,7 @@
 
 package org.pentaho.di.ui.trans.steps.mapping;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CTabFolder;
 import org.eclipse.swt.custom.CTabFolder2Adapter;
@@ -665,7 +665,7 @@ public class MappingDialog extends BaseStepDialog implements StepDialogInterface
       RepositoryElementMetaInterface repositoryObject = sod.getRepositoryObject();
       if ( repositoryObject != null ) {
         setSpecificationMethod( ObjectLocationSpecificationMethod.REPOSITORY_BY_REFERENCE );
-        getByReferenceData( repositoryObject );
+        updateByReferenceField( repositoryObject );
         setReferenceObjectId( repositoryObject.getObjectId() );
         setRadioButtons();
       }
@@ -841,6 +841,8 @@ public class MappingDialog extends BaseStepDialog implements StepDialogInterface
     TransMeta newTransMeta = new TransMeta();
 
     newTransMeta.getDatabases().addAll( transMeta.getDatabases() );
+    newTransMeta.setRepository( transMeta.getRepository() );
+    newTransMeta.setRepositoryDirectory( transMeta.getRepositoryDirectory() );
 
     // Pass some interesting settings from the parent transformations...
     //
@@ -923,9 +925,7 @@ public class MappingDialog extends BaseStepDialog implements StepDialogInterface
           PKG, "MappingDialog.Exception.NotConnectedToRepository.Message" ) );
       }
       RepositoryObject transInf = repository.getObjectInformation( transObjectId, RepositoryObjectType.TRANSFORMATION );
-      if ( transInf != null ) {
-        getByReferenceData( transInf );
-      }
+      updateByReferenceField( transInf );
     } catch ( KettleException e ) {
       new ErrorDialog( shell, BaseMessages.getString(
         PKG, "MappingDialog.Exception.UnableToReferenceObjectId.Title" ), BaseMessages.getString(
@@ -933,12 +933,11 @@ public class MappingDialog extends BaseStepDialog implements StepDialogInterface
     }
   }
 
-  private void getByReferenceData( RepositoryElementMetaInterface transInf ) {
-    String path = transInf.getRepositoryDirectory().getPath();
-    if ( !path.endsWith( "/" ) ) {
-      path += "/";
+  private void updateByReferenceField( RepositoryElementMetaInterface element ) {
+    String path = getPathOf( element );
+    if ( path == null ) {
+      path = "";
     }
-    path += transInf.getName();
     wByReference.setText( path );
   }
 
@@ -1075,8 +1074,8 @@ public class MappingDialog extends BaseStepDialog implements StepDialogInterface
 
     for ( int i = 0; i < parameters.getVariable().length; i++ ) {
       TableItem tableItem = wMappingParameters.table.getItem( i );
-      tableItem.setText( 1, parameters.getVariable()[ i ] );
-      tableItem.setText( 2, parameters.getInputField()[ i ] );
+      tableItem.setText( 1, Const.NVL( parameters.getVariable()[ i ], "" ) );
+      tableItem.setText( 2, Const.NVL( parameters.getInputField()[ i ], "" ) );
     }
     wMappingParameters.setRowNums();
     wMappingParameters.optWidth( true );

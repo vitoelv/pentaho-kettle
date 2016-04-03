@@ -22,7 +22,7 @@
 
 package org.pentaho.di.ui.trans.steps.transexecutor;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CCombo;
 import org.eclipse.swt.custom.CTabFolder;
@@ -559,7 +559,7 @@ public class TransExecutorDialog extends BaseStepDialog implements StepDialogInt
       RepositoryElementMetaInterface repositoryObject = sod.getRepositoryObject();
       if ( repositoryObject != null ) {
         specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_REFERENCE;
-        getByReferenceData( repositoryObject );
+        updateByReferenceField( repositoryObject );
         referenceObjectId = repositoryObject.getObjectId();
         setRadioButtons();
       }
@@ -714,12 +714,11 @@ public class TransExecutorDialog extends BaseStepDialog implements StepDialogInt
     setActive();
   }
 
-  private void getByReferenceData( RepositoryElementMetaInterface transInf ) {
-    String path = transInf.getRepositoryDirectory().getPath();
-    if ( !path.endsWith( "/" ) ) {
-      path += "/";
+  private void updateByReferenceField( RepositoryElementMetaInterface element ) {
+    String path = getPathOf( element );
+    if ( path == null ) {
+      path = "";
     }
-    path += transInf.getName();
     wByReference.setText( path );
   }
 
@@ -1540,7 +1539,6 @@ public class TransExecutorDialog extends BaseStepDialog implements StepDialogInt
     } catch ( KettleException e ) {
       new ErrorDialog( shell, BaseMessages.getString( PKG, "TransExecutorDialog.ErrorLoadingSpecifiedTrans.Title" ),
         BaseMessages.getString( PKG, "TransExecutorDialog.ErrorLoadingSpecifiedTrans.Message" ), e );
-      return;
     }
 
     transExecutorMeta.setSpecificationMethod( specificationMethod );
@@ -1660,6 +1658,12 @@ public class TransExecutorDialog extends BaseStepDialog implements StepDialogInt
     TransMeta newTransMeta = new TransMeta();
 
     newTransMeta.getDatabases().addAll( transMeta.getDatabases() );
+    newTransMeta.setRepository( transMeta.getRepository() );
+    newTransMeta.setRepositoryDirectory( transMeta.getRepositoryDirectory() );
+
+    // Pass some interesting settings from the parent transformations...
+    //
+    newTransMeta.setUsingUniqueConnections( transMeta.isUsingUniqueConnections() );
 
     TransDialog transDialog = new TransDialog( shell, SWT.NONE, newTransMeta, repository );
     if ( transDialog.open() != null ) {
@@ -1715,9 +1719,7 @@ public class TransExecutorDialog extends BaseStepDialog implements StepDialogInt
           "TransExecutorDialog.Exception.NotConnectedToRepository.Message" ) );
       }
       RepositoryObject transInf = repository.getObjectInformation( transObjectId, RepositoryObjectType.TRANSFORMATION );
-      if ( transInf != null ) {
-        getByReferenceData( transInf );
-      }
+      updateByReferenceField( transInf );
     } catch ( KettleException e ) {
       new ErrorDialog( shell, BaseMessages.getString( PKG,
         "TransExecutorDialog.Exception.UnableToReferenceObjectId.Title" ), BaseMessages.getString( PKG,

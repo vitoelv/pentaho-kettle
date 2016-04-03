@@ -127,8 +127,16 @@ public class ReplaceStringMeta extends BaseStepMeta implements StepMetaInterface
     return wholeWord;
   }
 
+  public void setWholeWord( int[] wholeWord ) {
+    this.wholeWord = wholeWord;
+  }
+
   public int[] getUseRegEx() {
     return useRegEx;
+  }
+
+  public void setUseRegEx( int[] useRegEx ) {
+    this.useRegEx = useRegEx;
   }
 
   /**
@@ -173,8 +181,16 @@ public class ReplaceStringMeta extends BaseStepMeta implements StepMetaInterface
     return replaceByString;
   }
 
+  public void setReplaceByString( String[] replaceByString ) {
+    this.replaceByString = replaceByString;
+  }
+
   public String[] getFieldReplaceByString() {
     return replaceFieldByString;
+  }
+
+  public void setFieldReplaceByString( String[] replaceFieldByString ) {
+    this.replaceFieldByString = replaceFieldByString;
   }
 
   public void setCaseSensitive( int[] caseSensitive ) {
@@ -343,6 +359,11 @@ public class ReplaceStringMeta extends BaseStepMeta implements StepMetaInterface
         // We have a new field
         valueMeta = new ValueMeta( fieldName, ValueMeta.TYPE_STRING );
         valueMeta.setOrigin( name );
+        //set encoding to new field from source field http://jira.pentaho.com/browse/PDI-11839
+        ValueMetaInterface sourceField = inputRowMeta.searchValueMeta( fieldInStream[i] );
+        if ( sourceField != null ) {
+          valueMeta.setStringEncoding( sourceField.getStringEncoding() );
+        }
         inputRowMeta.addValueMeta( valueMeta );
       } else {
         valueMeta = inputRowMeta.searchValueMeta( fieldInStream[i] );

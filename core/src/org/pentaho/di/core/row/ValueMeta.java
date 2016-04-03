@@ -39,10 +39,13 @@ import org.w3c.dom.Node;
  *
  *
  */
-public class ValueMeta extends ValueMetaBase implements ValueMetaInterface {
+@Deprecated
+public class ValueMeta extends ValueMetaBase {
   private static Class<?> PKG = Const.class;
 
   public static final String DEFAULT_DATE_FORMAT_MASK = "yyyy/MM/dd HH:mm:ss.SSS";
+
+  public static final String DEFAULT_TIMESTAMP_FORMAT_MASK  = "yyyy/MM/dd HH:mm:ss.SSSSSSSSS";
 
   public static final String XML_META_TAG = "value-meta";
   public static final String XML_DATA_TAG = "value-data";

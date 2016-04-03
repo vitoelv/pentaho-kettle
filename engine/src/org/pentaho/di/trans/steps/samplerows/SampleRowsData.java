@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,9 +22,8 @@
 
 package org.pentaho.di.trans.steps.samplerows;
 
-import java.util.HashSet;
-import java.util.Set;
-
+import com.google.common.collect.ImmutableRangeSet;
+import com.google.common.collect.RangeSet;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.trans.step.BaseStepData;
 import org.pentaho.di.trans.step.StepDataInterface;
@@ -32,23 +31,19 @@ import org.pentaho.di.trans.step.StepDataInterface;
 /**
  * @author Samatar
  * @since 24-jan-2008
- *
  */
 public class SampleRowsData extends BaseStepData implements StepDataInterface {
 
-  public Set<Integer> range;
-  public int maxLine;
+  public RangeSet<Integer> rangeSet;
   public boolean addlineField;
   public RowMetaInterface previousRowMeta;
   public RowMetaInterface outputRowMeta;
   public Object[] outputRow;
   public int NrPrevFields;
-  public boolean considerRow;
 
   public SampleRowsData() {
     super();
-    range = new HashSet<Integer>();
-    maxLine = 0;
+    rangeSet = ImmutableRangeSet.of();
     addlineField = false;
     outputRow = null;
   }

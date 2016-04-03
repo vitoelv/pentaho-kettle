@@ -27,7 +27,7 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CCombo;
 import org.eclipse.swt.custom.CTabFolder;
@@ -1121,7 +1121,10 @@ public class ExcelInputDialog extends BaseStepDialog implements StepDialogInterf
           SpreadSheetType type = SpreadSheetType.getStpreadSheetTypeByDescription( wSpreadSheetType.getText() );
           switch ( type ) {
             case POI:
-              extentions = new String[] { "*.xls;*.XLS;*.xlxs;*.XLSX", "*" };
+              extentions = new String[] { "*.xls;*.XLS;*.xlsx;*.XLSX", "*" };
+              break;
+            case SAX_POI:
+              extentions = new String[] { "*.xlsx;*.XLSX", "*" };
               break;
             case ODS:
               extentions = new String[] { "*.ods;*.ODS;", "*" };

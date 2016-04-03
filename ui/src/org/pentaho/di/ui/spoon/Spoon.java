@@ -23,19 +23,20 @@
 
 package org.pentaho.di.ui.spoon;
 
+import java.awt.Desktop;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Hashtable;
@@ -54,7 +55,7 @@ import java.util.regex.Pattern;
 import javax.swing.UIManager;
 import javax.swing.plaf.metal.MetalLookAndFeel;
 
-import org.apache.commons.vfs.FileObject;
+import org.apache.commons.vfs2.FileObject;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.MenuManager;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -77,6 +78,7 @@ import org.eclipse.swt.dnd.DropTarget;
 import org.eclipse.swt.dnd.DropTargetEvent;
 import org.eclipse.swt.dnd.DropTargetListener;
 import org.eclipse.swt.dnd.FileTransfer;
+import org.eclipse.swt.dnd.ImageTransfer;
 import org.eclipse.swt.dnd.Transfer;
 import org.eclipse.swt.events.KeyAdapter;
 import org.eclipse.swt.events.KeyEvent;
@@ -91,7 +93,6 @@ import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.events.TreeAdapter;
 import org.eclipse.swt.events.TreeEvent;
-import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Cursor;
 import org.eclipse.swt.graphics.DeviceData;
 import org.eclipse.swt.graphics.Image;
@@ -136,9 +137,9 @@ import org.pentaho.di.core.ObjectUsageCount;
 import org.pentaho.di.core.Props;
 import org.pentaho.di.core.RowMetaAndData;
 import org.pentaho.di.core.SourceToTargetMapping;
+import org.pentaho.di.core.XmlExportHelper;
 import org.pentaho.di.core.changed.ChangedFlagInterface;
 import org.pentaho.di.core.changed.PDIObserver;
-import org.pentaho.di.core.clipboard.ImageDataTransfer;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.encryption.Encr;
 import org.pentaho.di.core.exception.KettleAuthException;
@@ -159,15 +160,23 @@ import org.pentaho.di.core.lifecycle.LifeEventHandler;
 import org.pentaho.di.core.lifecycle.LifeEventInfo;
 import org.pentaho.di.core.lifecycle.LifecycleException;
 import org.pentaho.di.core.lifecycle.LifecycleSupport;
+import org.pentaho.di.core.logging.ChannelLogTable;
 import org.pentaho.di.core.logging.DefaultLogLevel;
 import org.pentaho.di.core.logging.FileLoggingEventListener;
+import org.pentaho.di.core.logging.JobEntryLogTable;
+import org.pentaho.di.core.logging.JobLogTable;
 import org.pentaho.di.core.logging.KettleLogStore;
 import org.pentaho.di.core.logging.LogChannel;
 import org.pentaho.di.core.logging.LogChannelInterface;
 import org.pentaho.di.core.logging.LogLevel;
+import org.pentaho.di.core.logging.LogTableInterface;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
 import org.pentaho.di.core.logging.LoggingObjectType;
+import org.pentaho.di.core.logging.MetricsLogTable;
+import org.pentaho.di.core.logging.PerformanceLogTable;
 import org.pentaho.di.core.logging.SimpleLoggingObject;
+import org.pentaho.di.core.logging.StepLogTable;
+import org.pentaho.di.core.logging.TransLogTable;
 import org.pentaho.di.core.parameters.NamedParams;
 import org.pentaho.di.core.plugins.JobEntryPluginType;
 import org.pentaho.di.core.plugins.LifecyclePluginType;
@@ -246,6 +255,7 @@ import org.pentaho.di.ui.core.PrintSpool;
 import org.pentaho.di.ui.core.PropsUI;
 import org.pentaho.di.ui.core.auth.AuthProviderDialog;
 import org.pentaho.di.ui.core.database.wizard.CreateDatabaseWizard;
+import org.pentaho.di.ui.core.dialog.AboutDialog;
 import org.pentaho.di.ui.core.dialog.CheckResultDialog;
 import org.pentaho.di.ui.core.dialog.EnterMappingDialog;
 import org.pentaho.di.ui.core.dialog.EnterOptionsDialog;
@@ -288,11 +298,11 @@ import org.pentaho.di.ui.spoon.SpoonLifecycleListener.SpoonLifeCycleEvent;
 import org.pentaho.di.ui.spoon.TabMapEntry.ObjectType;
 import org.pentaho.di.ui.spoon.delegates.SpoonDelegates;
 import org.pentaho.di.ui.spoon.dialog.AnalyseImpactProgressDialog;
+import org.pentaho.di.ui.spoon.dialog.CapabilityManagerDialog;
 import org.pentaho.di.ui.spoon.dialog.CheckTransProgressDialog;
 import org.pentaho.di.ui.spoon.dialog.LogSettingsDialog;
 import org.pentaho.di.ui.spoon.dialog.MetaStoreExplorerDialog;
 import org.pentaho.di.ui.spoon.dialog.SaveProgressDialog;
-import org.pentaho.di.ui.spoon.dialog.TipsDialog;
 import org.pentaho.di.ui.spoon.job.JobGraph;
 import org.pentaho.di.ui.spoon.partition.PartitionMethodSelector;
 import org.pentaho.di.ui.spoon.partition.PartitionSettings;
@@ -327,7 +337,6 @@ import org.pentaho.ui.xul.impl.XulEventHandler;
 import org.pentaho.ui.xul.jface.tags.ApplicationWindowLocal;
 import org.pentaho.ui.xul.jface.tags.JfaceMenuitem;
 import org.pentaho.ui.xul.jface.tags.JfaceMenupopup;
-import org.pentaho.ui.xul.swt.SwtXulLoader;
 import org.pentaho.ui.xul.swt.tags.SwtDeck;
 import org.pentaho.vfs.ui.VfsFileChooserDialog;
 import org.pentaho.xul.swt.tab.TabItem;
@@ -428,6 +437,8 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   // THE HANDLERS
   public SpoonDelegates delegates = new SpoonDelegates( this );
 
+  private SharedObjectSyncUtil sharedObjectSyncUtil = new SharedObjectSyncUtil( delegates );
+
   public RowMetaAndData variables = new RowMetaAndData( new RowMeta() );
 
   /**
@@ -477,11 +488,6 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   private static final String FILE_DOCUMENT_MAP = Const
       .safeAppendDirectory( BasePropertyHandler.getProperty( "documentationDirBase", "docs/" ),
           BaseMessages.getString( PKG, "Spoon.Title.STRING_DOCUMENT_MAP" ) );
-
-  // "docs/English/getting_started_with_instaview.pdf";
-  private static final String FILE_DOCUMENT_INSTAVIEW = Const
-      .safeAppendDirectory( BasePropertyHandler.getProperty( "documentationDirBase", "docs/" ),
-          BaseMessages.getString( PKG, "Spoon.Title.STRING_DOCUMENT_INSTAVIEW" ) );
 
   private static final String UNDO_MENU_ITEM = "edit-undo";
 
@@ -583,13 +589,13 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       public KettleException call() throws Exception {
         registerUIPluginObjectTypes();
 
+        KettleClientEnvironment.getInstance().setClient( KettleClientEnvironment.ClientType.SPOON );
         try {
           KettleEnvironment.init();
         } catch ( KettleException e ) {
           return e;
         }
 
-        KettleClientEnvironment.getInstance().setClient( KettleClientEnvironment.ClientType.SPOON );
         return null;
       }
     } );
@@ -806,7 +812,8 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     Composite sashComposite = null;
     MainSpoonPerspective mainPerspective = null;
     try {
-      SwtXulLoader xulLoader = new KettleXulLoader();
+      KettleXulLoader xulLoader = new KettleXulLoader();
+      xulLoader.setIconsSize( 16, 16 );
       xulLoader.setOuterContext( shell );
       xulLoader.setSettingsManager( XulSpoonSettingsManager.getInstance() );
 
@@ -820,6 +827,8 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       /* menuBar = (XulMenubar) */
       mainSpoonContainer.getDocumentRoot().getElementById( "spoon-menubar" );
       mainToolbar = (XulToolbar) mainSpoonContainer.getDocumentRoot().getElementById( "main-toolbar" );
+      props.setLook( (Control) mainToolbar.getManagedObject(), Props.WIDGET_STYLE_TOOLBAR );
+
       /* canvas = (XulVbox) */
       mainSpoonContainer.getDocumentRoot().getElementById( "trans-job-canvas" );
       deck = (SwtDeck) mainSpoonContainer.getDocumentRoot().getElementById( "canvas-deck" );
@@ -1013,8 +1022,36 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     boolean closed = true;
     EngineMetaInterface meta = getActiveMeta();
     if ( meta != null ) {
-      // If a transformation is the current active tab, close it
+
+      String beforeCloseId = null;
+      String afterCloseId = null;
+
+      if ( meta instanceof TransMeta ) {
+        beforeCloseId = KettleExtensionPoint.TransBeforeClose.id;
+        afterCloseId = KettleExtensionPoint.TransAfterClose.id;
+      } else if ( meta instanceof JobMeta ) {
+        beforeCloseId = KettleExtensionPoint.JobBeforeClose.id;
+        afterCloseId = KettleExtensionPoint.JobAfterClose.id;
+      }
+
+      if ( beforeCloseId != null ) {
+        try {
+          ExtensionPointHandler.callExtensionPoint( log, beforeCloseId, meta );
+        } catch ( KettleException e ) {
+          // fails gracefully but perhaps should return false?
+        }
+      }
+
+      // If a transformation or job is the current active tab, close it
       closed = tabCloseSelected();
+
+      if ( closed && ( afterCloseId != null ) ) {
+        try {
+          ExtensionPointHandler.callExtensionPoint( log, afterCloseId, meta );
+        } catch ( KettleException e ) {
+          // fails gracefully but perhaps should return false?
+        }
+      }
     }
 
     return closed;
@@ -1082,14 +1119,6 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     } else {
       // Cancel - don't close tabs and don't disconnect from repo
       return false;
-    }
-  }
-
-  public void closeSpoonBrowser() {
-    TabMapEntry browserTab = delegates.tabs.findTabMapEntry( STRING_WELCOME_TAB_NAME, ObjectType.BROWSER );
-
-    if ( browserTab != null ) {
-      delegates.tabs.removeTab( browserTab );
     }
   }
 
@@ -1463,17 +1492,13 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       List<StepMeta> stepMetas = transMeta.getSelectedSteps();
       if ( stepMetas != null && stepMetas.size() > 0 ) {
         copySteps();
-        for ( StepMeta stepMeta : stepMetas ) {
-          delStep( transMeta, stepMeta );
-        }
+        delSteps( transMeta, stepMetas.toArray( new StepMeta[stepMetas.size()] ) );
       }
     } else if ( jobActive ) {
       List<JobEntryCopy> jobEntryCopies = jobMeta.getSelectedEntries();
       if ( jobEntryCopies != null && jobEntryCopies.size() > 0 ) {
         copyJobentries();
-        for ( JobEntryCopy jobEntryCopy : jobEntryCopies ) {
-          deleteJobEntryCopies( jobMeta, jobEntryCopy );
-        }
+        deleteJobEntryCopies( jobMeta, jobEntryCopies.toArray( new JobEntryCopy[jobEntryCopies.size()] ) );
       }
     }
   }
@@ -1634,10 +1659,6 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     copyJob( getActiveJob() );
   }
 
-  public void showTips() {
-    new TipsDialog( shell ).open();
-  }
-
   public void showWelcomePage() {
     try {
       LocationListener listener = new LocationListener() {
@@ -1687,28 +1708,6 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     }
   }
 
-  public static final String getInstaviewURL() {
-    String strURL = null;
-    try {
-      String webstartRoot = System.getProperty( "spoon.webstartroot" );
-      // see if we are in webstart mode
-      if ( webstartRoot != null ) {
-        URL url = new URL( webstartRoot + '/' + FILE_DOCUMENT_INSTAVIEW );
-        strURL = url.toString();
-      } else {
-        // see if we can find the welcome file on the file system
-        File file = new File( FILE_DOCUMENT_INSTAVIEW );
-        if ( file.exists() ) {
-          // ./docs/English/getting_started_with_instaview.pdf
-          strURL = file.toURI().toURL().toString();
-        }
-      }
-    } catch ( MalformedURLException e1 ) {
-      log.logError( Const.getStackTracker( e1 ) );
-    }
-    return strURL;
-  }
-
   public void showDocumentMap() {
     try {
       LocationListener listener = new LocationListener() {
@@ -1733,8 +1732,16 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         // see if we can find the welcome file on the file system
         File file = new File( FILE_DOCUMENT_MAP );
         if ( file.exists() ) {
-          // ./docs/English/tips/index.htm
-          addSpoonBrowser( STRING_DOCUMENT_TAB_NAME, file.toURI().toURL().toString(), listener );
+          if ( Desktop.isDesktopSupported() ) {
+            // ./docs/English/tips/index.htm
+            try {
+              Desktop.getDesktop().open( file );
+            } catch ( IOException e ) {
+              log.logError( Const.getStackTracker( e ) );
+            }
+          } else {
+            addSpoonBrowser( STRING_DOCUMENT_TAB_NAME, file.toURI().toURL().toString(), listener );
+          }
         }
       }
     } catch ( MalformedURLException e1 ) {
@@ -1873,43 +1880,14 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   private void addTree() {
     mainComposite = new Composite( sashform, SWT.BORDER );
     mainComposite.setLayout( new FormLayout() );
+    props.setLook( mainComposite, Props.WIDGET_STYLE_TOOLBAR );
 
-    // int mainMargin = 4;
-
-    // TODO: add i18n keys
-    //
-    Label sep0 = new Label( mainComposite, SWT.SEPARATOR | SWT.HORIZONTAL );
-    sep0.setBackground( GUIResource.getInstance().getColorWhite() );
-    FormData fdSep0 = new FormData();
-    fdSep0.left = new FormAttachment( 0, 0 );
-    fdSep0.right = new FormAttachment( 100, 0 );
-    fdSep0.top = new FormAttachment( 0, 0 );
-    sep0.setLayoutData( fdSep0 );
-
-    // empty panel to correct background color.
-    Composite tabWrapper = new Composite( mainComposite, SWT.NONE );
-    tabWrapper.setLayout( new FormLayout() );
-    tabWrapper.setBackground( GUIResource.getInstance().getColorWhite() );
-
-    FormData fdTabWrapper = new FormData();
-    fdTabWrapper.left = new FormAttachment( 0, 0 );
-    fdTabWrapper.top = new FormAttachment( sep0, 0 );
-    fdTabWrapper.right = new FormAttachment( 100, 0 );
-    tabWrapper.setLayoutData( fdTabWrapper );
-
-    CTabFolder tabFolder = new CTabFolder( tabWrapper, SWT.HORIZONTAL | SWT.FLAT );
-    tabFolder.setSimple( false ); // Set simple what!!?? Well it sets the style of
-    // the tab folder to simple or stylish (curvy
-    // borders)
-    tabFolder.setBackground( GUIResource.getInstance().getColorWhite() );
-    tabFolder.setBorderVisible( false );
-    tabFolder.setSelectionBackground( new Color[] {
-      display.getSystemColor( SWT.COLOR_WIDGET_NORMAL_SHADOW ),
-      display.getSystemColor( SWT.COLOR_WIDGET_LIGHT_SHADOW ), }, new int[] { 55, }, true );
+    CTabFolder tabFolder = new CTabFolder( mainComposite, SWT.HORIZONTAL );
+    props.setLook( tabFolder, Props.WIDGET_STYLE_TAB );
 
     FormData fdTab = new FormData();
     fdTab.left = new FormAttachment( 0, 0 );
-    fdTab.top = new FormAttachment( sep0, 0 );
+    fdTab.top = new FormAttachment( mainComposite, 0 );
     fdTab.right = new FormAttachment( 100, 0 );
     fdTab.height = 0;
     tabFolder.setLayoutData( fdTab );
@@ -1929,16 +1907,21 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     FormData fdSep3 = new FormData();
     fdSep3.left = new FormAttachment( 0, 0 );
     fdSep3.right = new FormAttachment( 100, 0 );
-    fdSep3.top = new FormAttachment( tabWrapper, 0 );
+    fdSep3.top = new FormAttachment( tabFolder, 0 );
     sep3.setLayoutData( fdSep3 );
 
     selectionLabel = new Label( mainComposite, SWT.HORIZONTAL );
     FormData fdsLabel = new FormData();
-    fdsLabel.left = new FormAttachment( 0, 0 );
-    fdsLabel.top = new FormAttachment( sep3, 5 );
+    fdsLabel.left = new FormAttachment( 3, 0 );
+    if ( Const.isLinux() ) {
+      fdsLabel.top = new FormAttachment( sep3, 10 );
+    } else {
+      fdsLabel.top = new FormAttachment( sep3, 8 );
+    }
     selectionLabel.setLayoutData( fdsLabel );
 
-    ToolBar treeTb = new ToolBar( mainComposite, SWT.HORIZONTAL | SWT.FLAT | SWT.BORDER );
+    ToolBar treeTb = new ToolBar( mainComposite, SWT.HORIZONTAL | SWT.FLAT );
+    props.setLook( treeTb, Props.WIDGET_STYLE_TOOLBAR );
     /*
     This contains a map with all the unnamed transformation (just a filename)
    */
@@ -1948,7 +1931,11 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     collapseAll.setImage( GUIResource.getInstance().getImageCollapseAll() );
 
     FormData fdTreeToolbar = new FormData();
-    fdTreeToolbar.top = new FormAttachment( sep3, 0 );
+    if ( Const.isLinux() ) {
+      fdTreeToolbar.top = new FormAttachment( sep3, 3 );
+    } else {
+      fdTreeToolbar.top = new FormAttachment( sep3, 5 );
+    }
     fdTreeToolbar.right = new FormAttachment( 95, 5 );
     treeTb.setLayoutData( fdTreeToolbar );
 
@@ -1957,8 +1944,13 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         | SWT.BORDER | SWT.LEFT | SWT.SEARCH | SWT.ICON_SEARCH | SWT.ICON_CANCEL );
     selectionFilter.setToolTipText( BaseMessages.getString( PKG, "Spoon.SelectionFilter.Tooltip" ) );
     FormData fdSelectionFilter = new FormData();
-    fdSelectionFilter.top =
-      new FormAttachment( treeTb, -( GUIResource.getInstance().getImageExpandAll().getBounds().height + 5 ) );
+    int offset = -( GUIResource.getInstance().getImageExpandAll().getBounds().height + 5 );
+    if ( Const.isLinux() ) {
+      if ( !Const.isKDE() ) {
+        offset = -( GUIResource.getInstance().getImageExpandAll().getBounds().height + 12 );
+      }
+    }
+    fdSelectionFilter.top = new FormAttachment( treeTb, offset );
     fdSelectionFilter.right = new FormAttachment( 95, -55 );
     fdSelectionFilter.left = new FormAttachment( selectionLabel, 10 );
     selectionFilter.setLayoutData( fdSelectionFilter );
@@ -2029,7 +2021,6 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     sep4.setLayoutData( fdSep4 );
 
     variableComposite = new Composite( mainComposite, SWT.NONE );
-    variableComposite.setBackground( GUIResource.getInstance().getColorBackground() );
     variableComposite.setLayout( new FillLayout() );
     FormData fdVariableComposite = new FormData();
     fdVariableComposite.left = new FormAttachment( 0, 0 );
@@ -2194,12 +2185,16 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
           if ( tip != null ) {
             PluginInterface plugin = PluginRegistry.getInstance().findPluginWithName( StepPluginType.class, name );
             if ( plugin != null ) {
-              Image image = GUIResource.getInstance().getImagesSteps().get( plugin.getIds()[0] );
+              Image image =
+                  GUIResource.getInstance().getImagesSteps().get( plugin.getIds()[0] ).getAsBitmapForSize( display,
+                      ConstUI.ICON_SIZE, ConstUI.ICON_SIZE );
               if ( image == null ) {
                 toolTip.hide();
               }
               toolTip.setImage( image );
               toolTip.setText( name + Const.CR + Const.CR + tip );
+              toolTip.setBackgroundColor( GUIResource.getInstance().getColor( 255, 254, 225 ) );
+              toolTip.setForegroundColor( GUIResource.getInstance().getColor( 0, 0, 0 ) );
               toolTip.show( new org.eclipse.swt.graphics.Point( move.x + 10, move.y + 10 ) );
             }
           }
@@ -2208,9 +2203,13 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
             PluginInterface plugin =
               PluginRegistry.getInstance().findPluginWithName( JobEntryPluginType.class, name );
             if ( plugin != null ) {
-              Image image = GUIResource.getInstance().getImagesJobentries().get( plugin.getIds()[0] );
+              Image image =
+                  GUIResource.getInstance().getImagesJobentries().get( plugin.getIds()[0] ).getAsBitmapForSize(
+                      display, ConstUI.ICON_SIZE, ConstUI.ICON_SIZE );
               toolTip.setImage( image );
               toolTip.setText( name + Const.CR + Const.CR + tip );
+              toolTip.setBackgroundColor( GUIResource.getInstance().getColor( 255, 254, 225 ) );
+              toolTip.setForegroundColor( GUIResource.getInstance().getColor( 0, 0, 0 ) );
               toolTip.show( new org.eclipse.swt.graphics.Point( move.x + 10, move.y + 10 ) );
             }
           }
@@ -2301,36 +2300,36 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       for ( String baseCategory : baseCategories ) {
         TreeItem item = new TreeItem( coreObjectsTree, SWT.NONE );
         item.setText( baseCategory );
-        item.setImage( GUIResource.getInstance().getImageArrow() );
+        item.setImage( GUIResource.getInstance().getImageFolder() );
 
+        List<PluginInterface> sortedCat = new ArrayList<PluginInterface>();
         for ( PluginInterface baseStep : baseSteps ) {
           if ( baseStep.getCategory().equalsIgnoreCase( baseCategory ) ) {
-            final Image stepImage =
-              GUIResource.getInstance().getImagesStepsSmall().get( baseStep.getIds()[ 0 ] );
-            String pluginName = baseStep.getName();
-            String pluginDescription = baseStep.getDescription();
-
-            if ( !filterMatch( pluginName ) && !filterMatch( pluginDescription ) ) {
-              continue;
-            }
-
-            TreeItem stepItem = createTreeItem( item, pluginName, stepImage );
-            stepItem.addListener( SWT.Selection, new Listener() {
-
-              public void handleEvent( Event event ) {
-                System.out.println( "Tree item Listener fired" );
-              }
-            } );
-
-            coreStepToolTipMap.put( pluginName, pluginDescription );
+            sortedCat.add( baseStep );
           }
+        }
+        Collections.sort( sortedCat, new Comparator<PluginInterface>() {
+          public int compare( PluginInterface p1, PluginInterface p2 ) {
+            return p1.getName().compareTo( p2.getName() );
+          }
+        } );
+        for ( PluginInterface p : sortedCat ) {
+          final Image stepImage =
+            GUIResource.getInstance().getImagesStepsSmall().get( p.getIds()[ 0 ] );
+          String pluginName = p.getName();
+          String pluginDescription = p.getDescription();
+          if ( !filterMatch( pluginName ) && !filterMatch( pluginDescription ) ) {
+            continue;
+          }
+          createTreeItem( item, pluginName, stepImage );
+          coreStepToolTipMap.put( pluginName, pluginDescription );
         }
       }
 
       // Add History Items...
       TreeItem item = new TreeItem( coreObjectsTree, SWT.NONE );
       item.setText( BaseMessages.getString( PKG, "Spoon.History" ) );
-      item.setImage( GUIResource.getInstance().getImageArrow() );
+      item.setImage( GUIResource.getInstance().getImageFolder() );
 
       List<ObjectUsageCount> pluginHistory = props.getPluginHistory();
 
@@ -2341,7 +2340,8 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         PluginInterface stepPlugin =
           PluginRegistry.getInstance().findPluginWithId( StepPluginType.class, usage.getObjectName() );
         if ( stepPlugin != null ) {
-          final Image stepImage = GUIResource.getInstance().getImagesSteps().get( stepPlugin.getIds()[0] );
+          final Image stepImage =
+              GUIResource.getInstance().getImagesSteps().get( stepPlugin.getIds()[0] ).getAsBitmapForSize( display, ConstUI.MEDIUM_ICON_SIZE, ConstUI.MEDIUM_ICON_SIZE );
           String pluginName = Const.NVL( stepPlugin.getName(), "" );
           String pluginDescription = Const.NVL( stepPlugin.getDescription(), "" );
 
@@ -2379,7 +2379,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       for ( String baseCategory : baseCategories ) {
         TreeItem item = new TreeItem( coreObjectsTree, SWT.NONE );
         item.setText( baseCategory );
-        item.setImage( GUIResource.getInstance().getImageArrow() );
+        item.setImage( GUIResource.getInstance().getImageFolder() );
 
         if ( baseCategory.equalsIgnoreCase( JobEntryPluginType.GENERAL_CATEGORY ) ) {
           generalItem = item;
@@ -2389,7 +2389,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
           if ( !baseJobEntries.get( j ).getIds()[ 0 ].equals( "SPECIAL" ) ) {
             if ( baseJobEntries.get( j ).getCategory().equalsIgnoreCase( baseCategory ) ) {
               final Image jobEntryImage =
-                GUIResource.getInstance().getImagesJobentriesSmall().get( baseJobEntries.get( j ).getIds()[ 0 ] );
+                  GUIResource.getInstance().getImagesJobentriesSmall().get( baseJobEntries.get( j ).getIds()[0] );
               String pluginName = Const.NVL( baseJobEntries.get( j ).getName(), "" );
               String pluginDescription = Const.NVL( baseJobEntries.get( j ).getDescription(), "" );
 
@@ -2424,7 +2424,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       String[] specialTooltip = new String[] { startEntry.getDescription(), dummyEntry.getDescription(), };
       Image[] specialImage =
         new Image[] {
-          GUIResource.getInstance().getImageStartSmall(), GUIResource.getInstance().getImageDummySmall() };
+          GUIResource.getInstance().getImageStartMedium(), GUIResource.getInstance().getImageDummyMedium() };
 
       for ( int i = 0; i < specialText.length; i++ ) {
         TreeItem specialItem = new TreeItem( generalItem, SWT.NONE, i );
@@ -2677,6 +2677,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
     final DatabaseMeta databaseMeta = (DatabaseMeta) selectionObject;
     delegates.db.editConnection( databaseMeta );
+    sharedObjectSyncUtil.synchronizeConnections( databaseMeta );
   }
 
   public void dupeConnection() {
@@ -2793,6 +2794,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     final TransMeta transMeta = (TransMeta) selectionObjectParent;
     final StepMeta stepMeta = (StepMeta) selectionObject;
     delegates.steps.editStep( transMeta, stepMeta );
+    sharedObjectSyncUtil.synchronizeSteps( stepMeta );
   }
 
   public void dupeStep() {
@@ -3089,10 +3091,14 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         // newStep( getActiveTransformation() );
       }
       if ( selection instanceof DatabaseMeta ) {
-        delegates.db.editConnection( (DatabaseMeta) selection );
+        DatabaseMeta database = (DatabaseMeta) selection;
+        delegates.db.editConnection( database );
+        sharedObjectSyncUtil.synchronizeConnections( database );
       }
       if ( selection instanceof StepMeta ) {
-        delegates.steps.editStep( (TransMeta) parent, (StepMeta) selection );
+        StepMeta step = (StepMeta) selection;
+        delegates.steps.editStep( (TransMeta) parent, step );
+        sharedObjectSyncUtil.synchronizeSteps( step );
       }
       if ( selection instanceof JobEntryCopy ) {
         editJobEntry( (JobMeta) parent, (JobEntryCopy) selection );
@@ -3123,11 +3129,21 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
   protected void editSlaveServer( SlaveServer slaveServer ) {
     // slaveServer.getVariable("MASTER_HOST")
-    SlaveServerDialog dialog = new SlaveServerDialog( shell, slaveServer );
+    List<SlaveServer> existingServers = getActiveAbstractMeta().getSlaveServers();
+    SlaveServerDialog dialog = new SlaveServerDialog( shell, slaveServer, existingServers );
     if ( dialog.open() ) {
       refreshTree();
       refreshGraph();
+      sharedObjectSyncUtil.synchronizeSlaveServers( slaveServer );
     }
+  }
+
+  private AbstractMeta getActiveAbstractMeta() {
+    AbstractMeta abstractMeta = getActiveTransformation();
+    if ( abstractMeta == null ) {
+      abstractMeta = getActiveJob();
+    }
+    return abstractMeta;
   }
 
   private void addTabs() {
@@ -3142,8 +3158,8 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
     tabfolder = new TabSet( tabComp );
     tabfolder.setChangedFont( GUIResource.getInstance().getFontBold() );
-    props.setLook( tabfolder.getSwtTabset(), Props.WIDGET_STYLE_TAB );
     final CTabFolder cTabFolder = tabfolder.getSwtTabset();
+    props.setLook( cTabFolder, Props.WIDGET_STYLE_TAB );
     cTabFolder.addMenuDetectListener( new MenuDetectListener() {
       @Override
       public void menuDetected( MenuDetectEvent event ) {
@@ -3615,7 +3631,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     boolean ok = true;
 
     if ( transMeta.hasLoop( newHop.getFromStep() ) || transMeta.hasLoop( newHop.getToStep() ) ) {
-      MessageBox mb = new MessageBox( shell, SWT.YES | SWT.ICON_WARNING );
+      MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
       mb.setMessage( BaseMessages.getString( PKG, "TransGraph.Dialog.HopCausesLoop.Message" ) );
       mb.setText( BaseMessages.getString( PKG, "TransGraph.Dialog.HopCausesLoop.Title" ) );
       mb.open();
@@ -3811,7 +3827,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
           // Try to find the same directory in the new repository...
           RepositoryDirectoryInterface rdi =
             repository.findDirectory( jobMeta.getRepositoryDirectory().getPath() );
-          if ( rdi != null ) {
+          if ( rdi != null && !rdi.getPath().equals( "/" ) ) {
             jobMeta.setRepositoryDirectory( rdi );
           } else {
             // the root is the default!
@@ -3896,7 +3912,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
           // Try to find the same directory in the new repository...
           RepositoryDirectoryInterface rdi =
             repository.findDirectory( transMeta.getRepositoryDirectory().getPath() );
-          if ( rdi != null ) {
+          if ( rdi != null && !rdi.getPath().equals( "/" ) ) {
             transMeta.setRepositoryDirectory( rdi );
           } else {
             // the root is the default!
@@ -4236,9 +4252,16 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
           String name = sod.getObjectName();
           RepositoryDirectoryInterface repDir = sod.getDirectory();
 
+          ObjectId objId = sod.getObjectId();
           // Load a transformation
           if ( RepositoryObjectType.TRANSFORMATION.equals( type ) ) {
-            TransLoadProgressDialog tlpd = new TransLoadProgressDialog( shell, rep, name, repDir, null ); // Loads
+            TransLoadProgressDialog tlpd = null;
+            // prioritize loading file by id
+            if ( objId != null && !Const.isEmpty( objId.getId() ) ) {
+              tlpd = new TransLoadProgressDialog( shell, rep, objId, null ); // Load by id
+            } else {
+              tlpd = new TransLoadProgressDialog( shell, rep, name, repDir, null ); // Load by name/path
+            }
             // the
             // last
             // version
@@ -4261,7 +4284,13 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
             refreshTree();
           } else if ( RepositoryObjectType.JOB.equals( type ) ) {
             // Load a job
-            JobLoadProgressDialog jlpd = new JobLoadProgressDialog( shell, rep, name, repDir, null ); // Loads
+            JobLoadProgressDialog jlpd = null;
+            // prioritize loading file by id
+            if ( objId != null && !Const.isEmpty( objId.getId() ) ) {
+              jlpd = new JobLoadProgressDialog( shell, rep, objId, null ); // Loads
+            } else {
+              jlpd = new JobLoadProgressDialog( shell, rep, name, repDir, null ); // Loads
+            }
             // the last version
             JobMeta jobMeta = jlpd.open();
             sharedObjectsFileMap.put( jobMeta.getSharedObjects().getFilename(), jobMeta.getSharedObjects() );
@@ -4510,86 +4539,94 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   public void openFile( String filename, boolean importfile ) {
+    // Open the XML and see what's in there.
+    // We expect a single <transformation> or <job> root at this time...
+
+    boolean loaded = false;
+    FileListener listener = null;
+    Node root = null;
+    // match by extension first
+    int idx = filename.lastIndexOf( '.' );
+    if ( idx != -1 ) {
+      for ( FileListener li : fileListeners ) {
+        if ( li.accepts( filename ) ) {
+          listener = li;
+          break;
+        }
+      }
+    }
+
+    // Attempt to find a root XML node name. Fails gracefully for non-XML file
+    // types.
     try {
-      // Open the XML and see what's in there.
-      // We expect a single <transformation> or <job> root at this time...
+      Document document = XMLHandler.loadXMLFile( filename );
+      root = document.getDocumentElement();
+    } catch ( KettleXMLException e ) {
+      if ( log.isDetailed() ) {
+        log.logDetailed( BaseMessages.getString( PKG, "Spoon.File.Xml.Parse.Error" ) );
+      }
+    }
 
-      boolean loaded = false;
-      FileListener listener = null;
-      Node root = null;
-      // match by extension first
-      int idx = filename.lastIndexOf( '.' );
-      if ( idx != -1 ) {
-        for ( FileListener li : fileListeners ) {
-          if ( li.accepts( filename ) ) {
-            listener = li;
-            break;
-          }
+    // otherwise try by looking at the root node if we were able to parse file
+    // as XML
+    if ( listener == null && root != null ) {
+      for ( FileListener li : fileListeners ) {
+        if ( li.acceptsXml( root.getNodeName() ) ) {
+          listener = li;
+          break;
         }
       }
+    }
 
-      // Attempt to find a root XML node name. Fails gracefully for non-XML file
-      // types.
-      try {
-        Document document = XMLHandler.loadXMLFile( filename );
-        root = document.getDocumentElement();
-      } catch ( KettleXMLException e ) {
-        if ( log.isDetailed() ) {
-          log.logDetailed( BaseMessages.getString( PKG, "Spoon.File.Xml.Parse.Error" ) );
-        }
-      }
-
-      // otherwise try by looking at the root node if we were able to parse file
-      // as XML
-      if ( listener == null && root != null ) {
-        for ( FileListener li : fileListeners ) {
-          if ( li.acceptsXml( root.getNodeName() ) ) {
-            listener = li;
-            break;
-          }
-        }
-      }
-
-      // You got to have a file name!
-      //
-      if ( !Const.isEmpty( filename ) ) {
-
-        if ( listener != null ) {
+    // You got to have a file name!
+    //
+    if ( !Const.isEmpty( filename ) ) {
+      if ( listener != null ) {
+        try {
           loaded = listener.open( root, filename, importfile );
-        }
-        if ( !loaded ) {
-          // Give error back
-          hideSplash();
-          MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
-          mb.setMessage( BaseMessages.getString( PKG, "Spoon.UnknownFileType.Message", filename ) );
-          mb.setText( BaseMessages.getString( PKG, "Spoon.UnknownFileType.Title" ) );
-          mb.open();
-        } else {
-          applyVariables(); // set variables in the newly loaded
-          // transformation(s) and job(s).
+        } catch ( KettleMissingPluginsException e ) {
+          log.logError( e.getMessage(), e );
         }
       }
-    } catch ( KettleMissingPluginsException e ) {
-      // There are missing plugins, let's try to handle them in the marketplace...
-      //
-      if ( marketPluginIsAvailable() ) {
-        handleMissingPluginsExceptionWithMarketplace( e );
+      if ( !loaded ) {
+        // Give error back
+        hideSplash();
+        MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
+        mb.setMessage( BaseMessages.getString( PKG, "Spoon.UnknownFileType.Message", filename ) );
+        mb.setText( BaseMessages.getString( PKG, "Spoon.UnknownFileType.Title" ) );
+        mb.open();
+      } else {
+        applyVariables(); // set variables in the newly loaded
+        // transformation(s) and job(s).
       }
     }
   }
 
   /**
-   * Check to see if the market plugin is available.
-   *
-   * @return true if the market plugin is installed and ready, false if it is not.
+   * The method which can open the marketplace.
    */
-  private boolean marketPluginIsAvailable() {
-    PluginInterface marketPlugin = findMarketPlugin();
-    return marketPlugin != null;
+  private Method marketplaceMethod = null;
+
+  /**
+   * Set the method which can open the marketplace.
+   */
+  public void setMarketMethod( Method m ) {
+    marketplaceMethod = m;
   }
 
-  private PluginInterface findMarketPlugin() {
-    return PluginRegistry.getInstance().findPluginWithId( SpoonPluginType.class, "market" );
+  /**
+   * If available, this method will open the marketplace.
+   */
+  public void openMarketplace() {
+    try {
+      if ( marketplaceMethod != null ) {
+        marketplaceMethod.invoke( marketplaceMethod.getDeclaringClass().newInstance() );
+      }
+    } catch ( Exception ex ) {
+      new ErrorDialog(
+        shell, BaseMessages.getString( PKG, "Spoon.ErrorShowingMarketplaceDialog.Title" ), BaseMessages
+          .getString( PKG, "Spoon.ErrorShowingMarketplaceDialog.Message" ), ex );
+    }
   }
 
   /**
@@ -4599,27 +4636,15 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
    *          The missing plugins exception
    */
   public void handleMissingPluginsExceptionWithMarketplace( KettleMissingPluginsException missingPluginsException ) {
-    try {
-      hideSplash();
-      MessageBox box = new MessageBox( shell, SWT.ICON_QUESTION | SWT.YES | SWT.NO );
-      box.setText( BaseMessages.getString( PKG, "Spoon.MissingPluginsFoundDialog.Title" ) );
-      box.setMessage( BaseMessages.getString(
-        PKG, "Spoon.MissingPluginsFoundDialog.Message", Const.CR, missingPluginsException.getPluginsMessage() ) );
-      int answer = box.open();
-      if ( ( answer & SWT.YES ) != 0 ) {
-        String controllerClassName = "org.pentaho.di.ui.spoon.dialog.MarketplaceController";
-        PluginInterface marketPlugin = findMarketPlugin();
-        ClassLoader classLoader = PluginRegistry.getInstance().getClassLoader( marketPlugin );
-        Class<?> controllerClass = classLoader.loadClass( controllerClassName );
-        Method method = controllerClass.getMethod( "showMarketPlaceDialog" );
-        method.invoke( null );
-      }
-    } catch ( Exception ex ) {
-      new ErrorDialog(
-        shell, BaseMessages.getString( PKG, "Spoon.ErrorShowingMarketplaceDialog.Title" ), BaseMessages
-          .getString( PKG, "Spoon.ErrorShowingMarketplaceDialog.Message" ), ex );
+    hideSplash();
+    MessageBox box = new MessageBox( shell, SWT.ICON_QUESTION | SWT.YES | SWT.NO );
+    box.setText( BaseMessages.getString( PKG, "Spoon.MissingPluginsFoundDialog.Title" ) );
+    box.setMessage( BaseMessages.getString(
+      PKG, "Spoon.MissingPluginsFoundDialog.Message", Const.CR, missingPluginsException.getPluginsMessage() ) );
+    int answer = box.open();
+    if ( ( answer & SWT.YES ) != 0 ) {
+      openMarketplace();
     }
-
   }
 
   public PropsUI getProperties() {
@@ -4916,6 +4941,13 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     }
 
     if ( exit ) {
+      // on windows [...].swt.ole.win32.OleClientSite.OnInPlaceDeactivate can
+      // cause the focus to move to an already disposed tab, resulting in a NPE
+      // so we first move the focus to somewhere else
+      if ( this.selectionLabel != null && !this.selectionLabel.isDisposed() ) {
+        this.selectionLabel.forceFocus();
+      }
+
       close();
     }
 
@@ -4926,7 +4958,16 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     try {
       EngineMetaInterface meta = getActiveMeta();
       if ( meta != null ) {
-        return saveToFile( meta );
+        if ( AbstractMeta.class.isAssignableFrom( meta.getClass() ) && ( (AbstractMeta) meta ).hasMissingPlugins() ) {
+          MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
+          mb.setMessage( BaseMessages.getString( PKG, "Spoon.ErrorDialog.MissingPlugin.Error" ) );
+          mb.setText( BaseMessages.getString( PKG, "Spoon.ErrorDialog.MissingPlugin.Title" ) );
+          mb.open();
+          return false;
+        }
+        if ( meta != null ) {
+          return saveToFile( meta );
+        }
       }
     } catch ( Exception e ) {
       KettleRepositoryLostException krle = KettleRepositoryLostException.lookupStackStrace( e );
@@ -5128,11 +5169,12 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
             boolean versioningEnabled = true;
             boolean versionCommentsEnabled = true;
+            String fullPath = meta.getRepositoryDirectory() + "/" + meta.getName() + meta.getRepositoryElementType().getExtension();
             RepositorySecurityProvider repositorySecurityProvider =
                 rep != null && rep.getSecurityProvider() != null ? rep.getSecurityProvider() : null;
             if ( repositorySecurityProvider != null ) {
-              versioningEnabled = repositorySecurityProvider.isVersioningEnabled();
-              versionCommentsEnabled = repositorySecurityProvider.allowsVersionComments();
+              versioningEnabled = repositorySecurityProvider.isVersioningEnabled( fullPath );
+              versionCommentsEnabled = repositorySecurityProvider.allowsVersionComments( fullPath );
             }
 
             // Finally before saving, ask for a version comment (if
@@ -5147,15 +5189,16 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
               versionOk = false;
             }
             while ( !versionOk ) {
-              versionComment = RepositorySecurityUI.getVersionComment( shell, rep, meta.getName() );
+              versionComment = RepositorySecurityUI.getVersionComment( shell, rep, meta.getName(), fullPath, false );
 
               // if the version comment is null, the user hit cancel, exit.
               if ( rep != null && rep.getSecurityProvider() != null
-                  && rep.getSecurityProvider().allowsVersionComments() && versionComment == null ) {
+                  && rep.getSecurityProvider().allowsVersionComments( fullPath ) && versionComment == null ) {
                 return false;
               }
 
-              if ( Const.isEmpty( versionComment ) && rep.getSecurityProvider().isVersionCommentMandatory() ) {
+              if ( Const.isEmpty( versionComment ) && rep.getSecurityProvider().isVersioningEnabled( fullPath )
+                  && rep.getSecurityProvider().isVersionCommentMandatory() ) {
                 if ( !RepositorySecurityUI.showVersionCommentMandatoryDialog( shell ) ) {
                   return false; // no, I don't want to enter a
                   // version comment and yes,
@@ -5223,6 +5266,15 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   public boolean saveFileAs() throws KettleException {
     try {
       EngineMetaInterface meta = getActiveMeta();
+      if ( meta != null && AbstractMeta.class.isAssignableFrom( meta.getClass() ) ) {
+        if ( ( (AbstractMeta) meta ).hasMissingPlugins() ) {
+          MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
+          mb.setMessage( BaseMessages.getString( PKG, "Spoon.ErrorDialog.MissingPlugin.Error" ) );
+          mb.setText( BaseMessages.getString( PKG, "Spoon.ErrorDialog.MissingPlugin.Title" ) );
+          mb.open();
+          return false;
+        }
+      }
       if ( meta != null ) {
         if ( meta.canSave() ) {
           return saveFileAs( meta );
@@ -5563,19 +5615,19 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
     // Finally before importing, ask for a version comment (if applicable)
     //
+    String fullPath = baseDirectory.getPath() + "/foo.ktr";
     String versionComment = null;
     boolean versionOk = false;
     while ( !versionOk ) {
       versionComment =
         RepositorySecurityUI.getVersionComment( shell, rep, "Import of files into ["
-          + baseDirectory.getPath() + "]" );
+          + baseDirectory.getPath() + "]", fullPath, true );
       // if the version comment is null, the user hit cancel, exit.
-      if ( rep != null && rep.getSecurityProvider() != null && rep.getSecurityProvider().allowsVersionComments()
-          && versionComment == null ) {
+      if ( versionComment == null ) {
         return;
       }
 
-      if ( Const.isEmpty( versionComment ) && rep.getSecurityProvider().isVersionCommentMandatory() ) {
+      if ( Const.isEmpty( versionComment ) && rep.getSecurityProvider().isVersionCommentMandatory( ) ) {
         if ( !RepositorySecurityUI.showVersionCommentMandatoryDialog( shell ) ) {
           versionOk = true;
         }
@@ -5598,15 +5650,52 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   public boolean saveXMLFile( boolean export ) {
     TransMeta transMeta = getActiveTransformation();
     if ( transMeta != null ) {
-      return saveXMLFile( transMeta, export );
+      return saveTransAsXmlFile( transMeta, export );
     }
 
     JobMeta jobMeta = getActiveJob();
     if ( jobMeta != null ) {
-      return saveXMLFile( jobMeta, export );
+      return saveJobAsXmlFile( jobMeta, export );
     }
 
     return false;
+  }
+
+  private boolean saveTransAsXmlFile( TransMeta transMeta, boolean export ) {
+    TransLogTable origTransLogTable = transMeta.getTransLogTable();
+    StepLogTable origStepLogTable = transMeta.getStepLogTable();
+    PerformanceLogTable origPerformanceLogTable = transMeta.getPerformanceLogTable();
+    ChannelLogTable origChannelLogTable = transMeta.getChannelLogTable();
+    MetricsLogTable origMetricsLogTable = transMeta.getMetricsLogTable();
+
+    try {
+      XmlExportHelper.swapTables( transMeta );
+      return saveXMLFile( transMeta, export );
+    } finally {
+      transMeta.setTransLogTable( origTransLogTable );
+      transMeta.setStepLogTable( origStepLogTable );
+      transMeta.setPerformanceLogTable( origPerformanceLogTable );
+      transMeta.setChannelLogTable( origChannelLogTable );
+      transMeta.setMetricsLogTable( origMetricsLogTable );
+    }
+  }
+
+
+  private boolean saveJobAsXmlFile( JobMeta jobMeta, boolean export ) {
+    JobLogTable origJobLogTable = jobMeta.getJobLogTable();
+    JobEntryLogTable originEntryLogTable = jobMeta.getJobEntryLogTable();
+    ChannelLogTable originChannelLogTable = jobMeta.getChannelLogTable();
+    List<LogTableInterface> originExtraLogTables = jobMeta.getExtraLogTables();
+
+    try {
+      XmlExportHelper.swapTables( jobMeta );
+      return saveXMLFile( jobMeta, export );
+    } finally {
+      jobMeta.setJobLogTable( origJobLogTable );
+      jobMeta.setJobEntryLogTable( originEntryLogTable );
+      jobMeta.setChannelLogTable( originChannelLogTable );
+      jobMeta.setExtraLogTables( originExtraLogTables );
+    }
   }
 
   public boolean saveXMLFile( EngineMetaInterface meta, boolean export ) {
@@ -5721,8 +5810,8 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     String filename = null;
     FileObject selectedFile =
       getVfsFileChooserDialog( rootFile, initialFile ).open(
-        shell, "Untitled", Const.STRING_TRANS_AND_JOB_FILTER_EXT, Const.getTransformationAndJobFilterNames(),
-        VfsFileChooserDialog.VFS_DIALOG_SAVEAS );
+          shell, "Untitled", Const.STRING_TRANS_AND_JOB_FILTER_EXT, Const.getTransformationAndJobFilterNames(),
+          VfsFileChooserDialog.VFS_DIALOG_SAVEAS );
     if ( selectedFile != null ) {
       filename = selectedFile.getName().getFriendlyURI();
     }
@@ -5856,111 +5945,12 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   public void helpAbout() {
-    MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_INFORMATION | SWT.CENTER | SWT.SHEET );
-
-    String releaseText = Const.RELEASE.getMessage();
-    StringBuilder messageBuilder = new StringBuilder();
-    BuildVersion buildVersion = BuildVersion.getInstance();
-
-    // buildVersionInfo correspond to
-    // ${release.major.number}.${release.minor.number}.${release.milestone.number}.${build.id}
-    String buildVersionInfo = buildVersion.getVersion();
-
-    if ( Const.isEmpty( buildVersionInfo ) ) {
-      buildVersionInfo = "Unknown";
-    }
-
-    // suppose buildVersion consists of releaseInfo and commit id
-    String releaseInfo = "";
-    String buildStatus = "";
-
-    // build the result message
-    messageBuilder.append( BaseMessages.getString( PKG, "System.ProductInfo" ) );
-    messageBuilder.append( releaseText );
-    messageBuilder.append( " - " );
-
-    // Regex represents the string that contains a git 40-character checksum hash
-    String containingChecksumRegex = ".+\\b([a-f0-9]{40})\\b";
-
-    // check if string contains VCS checksum
-    if ( !buildVersionInfo.matches( containingChecksumRegex ) ) {
-      releaseInfo = buildVersionInfo;
-    } else {
-      // The next actions will not have sense when we will have separate string for commit id in manifest file in
-      // kettle-engine jar
-      String[] buildVsionInfoElts = buildVersionInfo.split( "\\." );
-      int elementCount = buildVsionInfoElts.length;
-
-      for ( int i = 0; i < elementCount; i++ ) {
-        String currentElement = buildVsionInfoElts[i];
-
-        // check if current element VCS checksum
-        if ( currentElement.length() != 40 ) {
-          releaseInfo += currentElement + ".";
-        } else {
-          buildStatus = currentElement;
-        }
-      }
-      // delete dot symbol at the end position
-      releaseInfo = new String( releaseInfo.substring( 0, releaseInfo.length() - 1 ) );
-    }
-
-    messageBuilder.append( releaseInfo );
-    messageBuilder.append( Const.CR );
-    messageBuilder.append( Const.CR );
-    messageBuilder.append( Const.CR );
-    messageBuilder.append( BaseMessages.getString( PKG, "System.CompanyInfo", "" + ( ( new Date() ).getYear() + 1900 ) ) );
-    messageBuilder.append( Const.CR );
-    messageBuilder.append( BaseMessages.getString( PKG, "System.ProductWebsiteUrl" ) );
-    messageBuilder.append( Const.CR );
-    messageBuilder.append( Const.CR );
-    messageBuilder.append( Const.CR );
-    messageBuilder.append( "Build version : " );
-    messageBuilder.append( releaseInfo );
-
-    if ( !buildStatus.isEmpty() ) {
-      messageBuilder.append( Const.CR );
-      messageBuilder.append( "Commit ID : " );
-      messageBuilder.append( buildStatus );
-    }
-
-    messageBuilder.append( Const.CR );
-    messageBuilder.append( "Build date : " );
-
-    String inputStringDate = buildVersion.getBuildDate();
-    String outputStringDate = "";
-    SimpleDateFormat inputFormat = null;
-    SimpleDateFormat otputFormat = null;
-
-    if ( inputStringDate.matches( "^\\d{4}/\\d{1,2}/\\d{1,2}\\s\\d{1,2}:\\d{2}:\\d{2}.\\d{3}$" ) ) {
-      inputFormat = new SimpleDateFormat( "yyyy/MM/dd hh:mm:ss.SSS" );
-    }
-    if ( inputStringDate.matches( "^\\d{4}-\\d{1,2}-\\d{1,2}\\_\\d{1,2}-\\d{2}-\\d{2}$" ) ) {
-      inputFormat = new SimpleDateFormat( "yyyy-MM-dd_hh-mm-ss" );
-    }
-    if ( inputStringDate.matches( "^\\d{4}-\\d{1,2}-\\d{1,2}\\s\\d{1,2}.\\d{2}.\\d{2}$" ) ) {
-      inputFormat = new SimpleDateFormat( "yyyy-MM-dd hh.mm.ss" );
-    }
-    otputFormat = new SimpleDateFormat( "MMMM d, yyyy hh:mm:ss" );
     try {
-      if ( inputFormat != null ) {
-        Date date = inputFormat.parse( inputStringDate );
-        outputStringDate = otputFormat.format( date );
-      } else {
-        // If date isn't correspond to formats above just show date in origin format
-        outputStringDate = inputStringDate;
-      }
-    } catch ( ParseException e ) {
-      // Just show date in origin format
-      outputStringDate = inputStringDate;
+      AboutDialog aboutDialog = new AboutDialog( getShell() );
+      aboutDialog.open();
+    } catch ( KettleException e ) {
+      log.logError( "Error opening about dialog", e );
     }
-    messageBuilder.append( outputStringDate );
-    // set the text in the message box
-    mb.setMessage( messageBuilder.toString() );
-    mb.setText( APP_NAME );
-
-    // now open the message box
-    mb.open();
   }
 
   /**
@@ -6036,6 +6026,11 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       mb.setText( BaseMessages.getString( PKG, "Spoon.Dialog.PleaseRestartApplication.Title" ) );
       mb.open();
     }
+  }
+
+  public void editCapabilities() {
+    CapabilityManagerDialog capabilityManagerDialog = new CapabilityManagerDialog( this.shell );
+    capabilityManagerDialog.open();
   }
 
   public void editKettlePropertiesFile() {
@@ -6157,7 +6152,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     if ( !props.isOnlyActiveFileShownInTree() || showAll || activeTransMeta != null ) {
       TreeItem tiTrans = new TreeItem( selectionTree, SWT.NONE );
       tiTrans.setText( STRING_TRANSFORMATIONS );
-      tiTrans.setImage( GUIResource.getInstance().getImageBol() );
+      tiTrans.setImage( GUIResource.getInstance().getImageFolder() );
 
       // Set expanded if this is the only transformation shown.
       if ( props.isOnlyActiveFileShownInTree() ) {
@@ -6179,7 +6174,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
               name = STRING_TRANS_NO_NAME;
             }
 
-            TreeItem tiTransName = createTreeItem( tiTrans, name, guiResource.getImageTransGraph() );
+            TreeItem tiTransName = createTreeItem( tiTrans, name, guiResource.getImageTransTree() );
 
             // Set expanded if this is the only transformation
             // shown.
@@ -6209,7 +6204,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     if ( !props.isOnlyActiveFileShownInTree() || showAll || activeJobMeta != null ) {
       TreeItem tiJobs = new TreeItem( selectionTree, SWT.NONE );
       tiJobs.setText( STRING_JOBS );
-      tiJobs.setImage( GUIResource.getInstance().getImageBol() );
+      tiJobs.setImage( GUIResource.getInstance().getImageFolder() );
 
       // Set expanded if this is the only job shown.
       if ( props.isOnlyActiveFileShownInTree() ) {
@@ -6236,7 +6231,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
               continue;
             }
 
-            TreeItem tiJobName = createTreeItem( tiJobs, name, guiResource.getImageJobGraph() );
+            TreeItem tiJobName = createTreeItem( tiJobs, name, guiResource.getImageJobTree() );
 
             // Set expanded if this is the only job shown.
             if ( props.isOnlyActiveFileShownInTree() ) {
@@ -6267,19 +6262,6 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     setShellText();
   }
 
-  private String[] pickupDbConnections( AbstractMeta transMeta ) throws KettleException {
-    return ( rep == null ) ? transMeta.getDatabaseNames() : rep.getDatabaseNames( false );
-  }
-
-  private DatabaseMeta findDatabase( List<? extends DatabaseMeta> dbs, String dbName ) {
-    for ( DatabaseMeta meta : dbs ) {
-      if ( meta.getName().equalsIgnoreCase( dbName ) || meta.getDisplayName().equalsIgnoreCase( dbName ) ) {
-        return meta;
-      }
-    }
-    return null;
-  }
-
   @VisibleForTesting TreeItem createTreeItem( TreeItem parent, String text, Image image ) {
     TreeItem item = new TreeItem( parent, SWT.NONE );
     item.setText( text );
@@ -6287,27 +6269,13 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     return item;
   }
 
-  @VisibleForTesting void refreshDbConnectionsSubtree( TreeItem tiRootName, AbstractMeta meta, GUIResource guiResource ) {
-    TreeItem tiDbTitle = createTreeItem( tiRootName, STRING_CONNECTIONS, guiResource.getImageBol() );
+  @VisibleForTesting void refreshDbConnectionsSubtree( TreeItem tiRootName, AbstractMeta meta,
+                                                       GUIResource guiResource ) {
+    TreeItem tiDbTitle = createTreeItem( tiRootName, STRING_CONNECTIONS, guiResource.getImageFolder() );
 
-    String[] dbNames;
-    List<DatabaseMeta> dbs;
+    DatabasesCollector collector = new DatabasesCollector( meta, rep );
     try {
-      dbNames = pickupDbConnections( meta );
-
-      if ( dbNames.length == 0 ) {
-        return;
-      }
-
-      if ( rep == null ) {
-        dbs = meta.getDatabases();
-      } else {
-        dbs = rep.readDatabases();
-        for ( int i = 0; i < dbNames.length; i++ ) {
-          String dbName = dbNames[ i ];
-          dbs.get( i ).setName( dbName );
-        }
-      }
+      collector.collectDatabases();
     } catch ( KettleException e ) {
       new ErrorDialog( shell,
         BaseMessages.getString( PKG, "Spoon.ErrorDialog.Title" ),
@@ -6318,19 +6286,13 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       return;
     }
 
-    Arrays.sort( dbNames, String.CASE_INSENSITIVE_ORDER );
-
-    for ( String dbName : dbNames ) {
+    for ( String dbName : collector.getDatabaseNames() ) {
       if ( !filterMatch( dbName ) ) {
         continue;
       }
+      DatabaseMeta databaseMeta = collector.getMetaFor( dbName );
 
-      DatabaseMeta databaseMeta = meta.findDatabase( dbName );
-      if ( databaseMeta == null ) {
-        databaseMeta = findDatabase( dbs, dbName );
-      }
-
-      TreeItem tiDb = createTreeItem( tiDbTitle, databaseMeta.getDisplayName(), guiResource.getImageConnection() );
+      TreeItem tiDb = createTreeItem( tiDbTitle, databaseMeta.getDisplayName(), guiResource.getImageConnectionTree() );
       if ( databaseMeta.isShared() ) {
         tiDb.setFont( guiResource.getFontBold() );
       }
@@ -6338,11 +6300,14 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   private void refreshStepsSubtree( TreeItem tiRootName, TransMeta meta, GUIResource guiResource ) {
-    TreeItem tiStepTitle = createTreeItem( tiRootName, STRING_STEPS, guiResource.getImageBol() );
+    TreeItem tiStepTitle = createTreeItem( tiRootName, STRING_STEPS, guiResource.getImageFolder() );
 
     // Put the steps below it.
     for ( int i = 0; i < meta.nrSteps(); i++ ) {
       StepMeta stepMeta = meta.getStep( i );
+      if ( stepMeta.isMissing() ) {
+        continue;
+      }
       PluginInterface stepPlugin =
         PluginRegistry.getInstance().findPluginWithId( StepPluginType.class, stepMeta.getStepID() );
 
@@ -6352,7 +6317,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
       Image stepIcon = guiResource.getImagesStepsSmall().get( stepPlugin.getIds()[ 0 ] );
       if ( stepIcon == null ) {
-        stepIcon = guiResource.getImageBol();
+        stepIcon = guiResource.getImageFolder();
       }
 
       TreeItem tiStep = createTreeItem( tiStepTitle, stepMeta.getName(), stepIcon );
@@ -6367,7 +6332,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   @VisibleForTesting void refreshHopsSubtree( TreeItem tiTransName, TransMeta transMeta, GUIResource guiResource ) {
-    TreeItem tiHopTitle = createTreeItem( tiTransName, STRING_HOPS, guiResource.getImageBol() );
+    TreeItem tiHopTitle = createTreeItem( tiTransName, STRING_HOPS, guiResource.getImageFolder() );
 
     // Put the steps below it.
     for ( int i = 0; i < transMeta.nrTransHops(); i++ ) {
@@ -6377,7 +6342,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         continue;
       }
 
-      Image icon = hopMeta.isEnabled() ? guiResource.getImageHop() : guiResource.getImageDisabledHop();
+      Image icon = hopMeta.isEnabled() ? guiResource.getImageHopTree() : guiResource.getImageDisabledHopTree();
       createTreeItem( tiHopTitle, hopMeta.toString(), icon );
     }
   }
@@ -6411,7 +6376,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
 
   @VisibleForTesting void refreshPartitionsSubtree( TreeItem tiTransName, TransMeta transMeta, GUIResource guiResource ) {
-    TreeItem tiPartitionTitle = createTreeItem( tiTransName, STRING_PARTITIONS, guiResource.getImageBol() );
+    TreeItem tiPartitionTitle = createTreeItem( tiTransName, STRING_PARTITIONS, guiResource.getImageFolder() );
 
     List<PartitionSchema> partitionSchemas;
     try {
@@ -6432,7 +6397,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         continue;
       }
       TreeItem tiPartition =
-        createTreeItem( tiPartitionTitle, partitionSchema.getName(), guiResource.getImageFolderConnections() );
+        createTreeItem( tiPartitionTitle, partitionSchema.getName(), guiResource.getImageFolderConnectionsMedium() );
       if ( partitionSchema.isShared() ) {
         tiPartition.setFont( guiResource.getFontBold() );
       }
@@ -6471,7 +6436,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   @VisibleForTesting void refreshSlavesSubtree( TreeItem tiRootName, AbstractMeta meta, GUIResource guiResource ) {
-    TreeItem tiSlaveTitle = createTreeItem( tiRootName, STRING_SLAVES, guiResource.getImageBol() );
+    TreeItem tiSlaveTitle = createTreeItem( tiRootName, STRING_SLAVES, guiResource.getImageFolder() );
 
     List<SlaveServer> servers;
     try {
@@ -6496,7 +6461,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
       SlaveServer slaveServer = SlaveServer.findSlaveServer( servers, slaveName );
 
-      TreeItem tiSlave = createTreeItem( tiSlaveTitle, slaveServer.getName(), guiResource.getImageSlave() );
+      TreeItem tiSlave = createTreeItem( tiSlaveTitle, slaveServer.getName(), guiResource.getImageSlaveMedium() );
       if ( slaveServer.isShared() ) {
         tiSlave.setFont( guiResource.getFontBold() );
       }
@@ -6504,23 +6469,22 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   @VisibleForTesting void refreshClustersSubtree( TreeItem tiTransName, TransMeta transMeta, GUIResource guiResource ) {
-    TreeItem tiClusterTitle = createTreeItem( tiTransName, STRING_CLUSTERS, guiResource.getImageBol() );
+    TreeItem tiClusterTitle = createTreeItem( tiTransName, STRING_CLUSTERS, guiResource.getImageFolder() );
 
     // Put the steps below it.
     for ( ClusterSchema clusterSchema : transMeta.getClusterSchemas() ) {
       if ( !filterMatch( clusterSchema.getName() ) ) {
         continue;
       }
-      TreeItem tiCluster = createTreeItem( tiClusterTitle, clusterSchema.toString(), guiResource.getImageCluster() );
+      TreeItem tiCluster = createTreeItem( tiClusterTitle, clusterSchema.toString(), guiResource.getImageClusterMedium() );
       if ( clusterSchema.isShared() ) {
         tiCluster.setFont( guiResource.getFontBold() );
       }
     }
   }
 
-
   private void refreshJobEntriesSubtree( TreeItem tiJobName, JobMeta jobMeta, GUIResource guiResource ) {
-    TreeItem tiJobEntriesTitle = createTreeItem( tiJobName, STRING_JOB_ENTRIES, guiResource.getImageBol() );
+    TreeItem tiJobEntriesTitle = createTreeItem( tiJobName, STRING_JOB_ENTRIES, guiResource.getImageFolder() );
 
     for ( int i = 0; i < jobMeta.nrJobEntries(); i++ ) {
       JobEntryCopy jobEntry = jobMeta.getJobEntry( i );
@@ -6539,9 +6503,9 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       // allow job entries to be shared as well...
       Image icon;
       if ( jobEntry.isStart() ) {
-        icon = GUIResource.getInstance().getImageStart();
+        icon = GUIResource.getInstance().getImageStartMedium();
       } else if ( jobEntry.isDummy() ) {
-        icon = GUIResource.getInstance().getImageDummy();
+        icon = GUIResource.getInstance().getImageDummyMedium();
       } else {
         String key = jobEntry.getEntry().getPluginId();
         icon = GUIResource.getInstance().getImagesJobentriesSmall().get( key );
@@ -6823,6 +6787,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       disablePreviewButton = !( transGraph.isRunning() && !transGraph.isHalting() );
     }
     boolean disableSave = true;
+    boolean disableDatabaseExplore = true;
     TabItemInterface currentTab = getActiveTabitem();
     if ( currentTab != null && currentTab.canHandleSave() ) {
       disableSave = !currentTab.hasContentChanged();
@@ -6830,6 +6795,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     EngineMetaInterface meta = getActiveMeta();
     if ( meta != null ) {
       disableSave = !meta.canSave();
+      disableDatabaseExplore = false;
     }
 
     org.pentaho.ui.xul.dom.Document doc;
@@ -6843,12 +6809,11 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
           doc.getElementById( "action" ).setVisible( etlPerspective );
           doc.getElementById( "tools" ).setVisible( etlPerspective );
           doc.getElementById( "help" ).setVisible( etlPerspective );
-          doc.getElementById( "help-tip" ).setVisible( etlPerspective );
           doc.getElementById( "help-welcome" ).setVisible( etlPerspective );
           doc.getElementById( "help-plugins" ).setVisible( true );
         }
         // Only enable certain menu-items if we need to.
-        disableMenuItem( doc, "file-new-database", disableTransMenu && disableJobMenu || !isRepositoryRunning );
+        disableMenuItem( doc, "file-new-database", disableTransMenu && disableJobMenu );
         disableMenuItem( doc, "file-save", disableTransMenu && disableJobMenu && disableMetaMenu || disableSave );
         disableMenuItem( doc, "toolbar-file-save", disableTransMenu
           && disableJobMenu && disableMetaMenu || disableSave );
@@ -6882,6 +6847,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
         // Transformations
         disableMenuItem( doc, "process-run", disableTransMenu && disablePreviewButton && disableJobMenu );
+        disableMenuItem( doc, "process-run-options", disableTransMenu && disablePreviewButton && disableJobMenu );
         disableMenuItem( doc, "trans-replay", disableTransMenu && disablePreviewButton );
         disableMenuItem( doc, "trans-preview", disableTransMenu && disablePreviewButton );
         disableMenuItem( doc, "trans-debug", disableTransMenu && disablePreviewButton );
@@ -6894,6 +6860,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         disableMenuItem( doc, "repository-connect", isRepositoryRunning );
         disableMenuItem( doc, "repository-disconnect", !isRepositoryRunning );
         disableMenuItem( doc, "repository-explore", !isRepositoryRunning );
+        disableMenuItem( doc, "tools-dabase-explore", !isRepositoryRunning && disableDatabaseExplore );
         disableMenuItem( doc, "repository-clear-shared-object-cache", !isRepositoryRunning );
         disableMenuItem( doc, "toolbar-expore-repository", !isRepositoryRunning );
         disableMenuItem( doc, "repository-export-all", !isRepositoryRunning );
@@ -6981,12 +6948,31 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   private void markTabsChanged() {
+
     for ( TabMapEntry entry : delegates.tabs.getTabs() ) {
       if ( entry.getTabItem().isDisposed() ) {
         continue;
       }
 
       boolean changed = entry.getObject().hasContentChanged();
+      if ( changed ) {
+        // Call extension point to alert plugins that a transformation or job has changed
+        Object tabObject = entry.getObject().getManagedObject();
+        String changedId = null;
+        if ( tabObject instanceof TransMeta ) {
+          changedId = KettleExtensionPoint.TransChanged.id;
+        } else if ( tabObject instanceof JobMeta ) {
+          changedId = KettleExtensionPoint.JobChanged.id;
+        }
+
+        if ( changedId != null ) {
+          try {
+            ExtensionPointHandler.callExtensionPoint( log, changedId, tabObject );
+          } catch ( KettleException e ) {
+            // fails gracefully
+          }
+        }
+      }
       entry.getTabItem().setChanged( changed );
     }
   }
@@ -7083,7 +7069,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   public JobGraph getActiveJobGraph() {
     if ( delegates != null && delegates.tabs != null && tabfolder != null ) {
       TabMapEntry mapEntry = delegates.tabs.getTab( tabfolder.getSelected() );
-      if ( mapEntry.getObject() instanceof JobGraph ) {
+      if ( mapEntry != null && mapEntry.getObject() instanceof JobGraph ) {
         return (JobGraph) mapEntry.getObject();
       }
     }
@@ -7210,12 +7196,14 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         filename = rep != null ? transMeta.getName() : transMeta.getFilename();
         directory = transMeta.getRepositoryDirectory().toString();
         openType = LastUsedFile.OPENED_ITEM_TYPE_MASK_GRAPH;
+        entry.setObjectName( transMeta.getName() );
       } else if ( entry.getObjectType() == ObjectType.JOB_GRAPH ) {
         fileType = LastUsedFile.FILE_TYPE_JOB;
         JobMeta jobMeta = (JobMeta) entry.getObject().getManagedObject();
         filename = rep != null ? jobMeta.getName() : jobMeta.getFilename();
         directory = jobMeta.getRepositoryDirectory().toString();
         openType = LastUsedFile.OPENED_ITEM_TYPE_MASK_GRAPH;
+        entry.setObjectName( jobMeta.getName() );
       }
 
       if ( fileType != null ) {
@@ -7261,9 +7249,26 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
     if ( undoInterface instanceof TransMeta ) {
       delegates.trans.undoTransformationAction( (TransMeta) undoInterface, ta );
+      if ( ta.getType() == TransAction.TYPE_ACTION_DELETE_STEP ) {
+        setUndoMenu( undoInterface ); // something changed: change the menu
+        ta = undoInterface.viewPreviousUndo();
+        if ( ta != null && ta.getType() == TransAction.TYPE_ACTION_DELETE_HOP ) {
+          ta = undoInterface.previousUndo();
+          delegates.trans.undoTransformationAction( (TransMeta) undoInterface, ta );
+        }
+      }
+
     }
     if ( undoInterface instanceof JobMeta ) {
       delegates.jobs.undoJobAction( (JobMeta) undoInterface, ta );
+      if ( ta.getType() == TransAction.TYPE_ACTION_DELETE_JOB_ENTRY ) {
+        setUndoMenu( undoInterface ); // something changed: change the menu
+        ta = undoInterface.viewPreviousUndo();
+        if ( ta != null && ta.getType() == TransAction.TYPE_ACTION_DELETE_JOB_HOP ) {
+          ta = undoInterface.previousUndo();
+          delegates.jobs.undoJobAction( (JobMeta) undoInterface, ta );
+        }
+      }
     }
 
     // Put what we undo in focus
@@ -7291,10 +7296,28 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
     if ( undoInterface instanceof TransMeta ) {
       delegates.trans.redoTransformationAction( (TransMeta) undoInterface, ta );
+      if ( ta.getType() == TransAction.TYPE_ACTION_DELETE_HOP ) {
+        setUndoMenu( undoInterface ); // something changed: change the menu
+        ta = undoInterface.viewNextUndo();
+        if ( ta != null && ta.getType() == TransAction.TYPE_ACTION_DELETE_STEP ) {
+          ta = undoInterface.nextUndo();
+          delegates.trans.redoTransformationAction( (TransMeta) undoInterface, ta );
+        }
+      }
+
     }
     if ( undoInterface instanceof JobMeta ) {
       delegates.jobs.redoJobAction( (JobMeta) undoInterface, ta );
+      if ( ta.getType() == TransAction.TYPE_ACTION_DELETE_JOB_HOP ) {
+        setUndoMenu( undoInterface ); // something changed: change the menu
+        ta = undoInterface.viewNextUndo();
+        if ( ta != null && ta.getType() == TransAction.TYPE_ACTION_DELETE_JOB_ENTRY ) {
+          ta = undoInterface.nextUndo();
+          delegates.jobs.redoJobAction( (JobMeta) undoInterface, ta );
+        }
+      }
     }
+
 
     // Put what we redo in focus
     if ( undoInterface instanceof TransMeta ) {
@@ -7602,7 +7625,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     Point area = transMeta.getMaximum();
     Image image = transGraph.getTransformationImage( Display.getCurrent(), area.x, area.y, 1.0f );
     clipboard.setContents(
-      new Object[] { image.getImageData() }, new Transfer[] { ImageDataTransfer.getInstance() } );
+      new Object[] { image.getImageData() }, new Transfer[] { ImageTransfer.getInstance() } );
   }
 
   /**
@@ -7925,10 +7948,6 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     //
     handleStartOptions( options );
 
-    // Load the last loaded files
-    //
-    loadLastUsedFiles();
-
     // Enable menus based on whether user was able to login or not
     //
     enableMenus();
@@ -7936,12 +7955,6 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     // enable perspective switching
     SpoonPerspectiveManager.getInstance().setForcePerspective( false );
 
-    if ( props.showTips() ) {
-      TipsDialog tip = new TipsDialog( shell );
-
-      hideSplash();
-      tip.open();
-    }
     if ( splash != null ) {
       splash.dispose();
       splash = null;
@@ -8339,6 +8352,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
       }
     }
 
+    transMeta.setChanged();
     refreshTree();
     refreshGraph();
   }
@@ -8351,41 +8365,20 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   /**
-   * This creates a new partitioning schema, edits it and adds it to the transformation metadata
-   *
+   * This creates a new partitioning schema, edits it and adds it to the transformation metadata if its name is not a
+   * duplicate of any of existing
    */
   public void newPartitioningSchema( TransMeta transMeta ) {
-    PartitionSchema partitionSchema = new PartitionSchema();
-
-    PartitionSchemaDialog dialog =
-      new PartitionSchemaDialog( shell, partitionSchema, transMeta.getDatabases(), transMeta );
-    if ( dialog.open() ) {
-      transMeta.getPartitionSchemas().add( partitionSchema );
-
-      if ( rep != null ) {
-        try {
-          if ( !rep.getSecurityProvider().isReadOnly() ) {
-            rep.save( partitionSchema, Const.VERSION_COMMENT_INITIAL_VERSION, null );
-          } else {
-            throw new KettleException( BaseMessages.getString(
-              PKG, "Spoon.Dialog.Exception.ReadOnlyRepositoryUser" ) );
-          }
-        } catch ( KettleException e ) {
-          new ErrorDialog(
-            getShell(), BaseMessages.getString( PKG, "Spoon.Dialog.ErrorSavingPartition.Title" ), BaseMessages
-              .getString( PKG, "Spoon.Dialog.ErrorSavingPartition.Message", partitionSchema.getName() ), e );
-        }
-      }
-
-      refreshTree();
-    }
+    delegates.partitions.newPartitioningSchema( transMeta );
   }
 
   private void editPartitionSchema( TransMeta transMeta, PartitionSchema partitionSchema ) {
     PartitionSchemaDialog dialog =
-      new PartitionSchemaDialog( shell, partitionSchema, transMeta.getDatabases(), transMeta );
+        new PartitionSchemaDialog( shell, partitionSchema, transMeta.getPartitionSchemas(), transMeta.getDatabases(),
+            transMeta );
     if ( dialog.open() ) {
       refreshTree();
+      sharedObjectSyncUtil.synchronizePartitionSchemas( partitionSchema );
     }
   }
 
@@ -8407,39 +8400,19 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   /**
-   * This creates a new clustering schema, edits it and adds it to the transformation metadata
-   *
+   * This creates a new clustering schema, edits it and adds it to the transformation metadata if its name is not a
+   * duplicate of any of existing
    */
   public void newClusteringSchema( TransMeta transMeta ) {
-    ClusterSchema clusterSchema = new ClusterSchema();
-
-    ClusterSchemaDialog dialog = new ClusterSchemaDialog( shell, clusterSchema, transMeta.getSlaveServers() );
-    if ( dialog.open() ) {
-      transMeta.getClusterSchemas().add( clusterSchema );
-
-      if ( rep != null ) {
-        try {
-          if ( !rep.getSecurityProvider().isReadOnly() ) {
-            rep.save( clusterSchema, Const.VERSION_COMMENT_INITIAL_VERSION, null );
-          } else {
-            throw new KettleException( BaseMessages.getString(
-              PKG, "Spoon.Dialog.Exception.ReadOnlyRepositoryUser" ) );
-          }
-        } catch ( KettleException e ) {
-          new ErrorDialog(
-            getShell(), BaseMessages.getString( PKG, "Spoon.Dialog.ErrorSavingCluster.Title" ), BaseMessages
-              .getString( PKG, "Spoon.Dialog.ErrorSavingCluster.Message", clusterSchema.getName() ), e );
-        }
-      }
-
-      refreshTree();
-    }
+    delegates.clusters.newClusteringSchema( transMeta );
   }
 
   private void editClusterSchema( TransMeta transMeta, ClusterSchema clusterSchema ) {
-    ClusterSchemaDialog dialog = new ClusterSchemaDialog( shell, clusterSchema, transMeta.getSlaveServers() );
+    ClusterSchemaDialog dialog =
+        new ClusterSchemaDialog( shell, clusterSchema, transMeta.getClusterSchemas(), transMeta.getSlaveServers() );
     if ( dialog.open() ) {
       refreshTree();
+      sharedObjectSyncUtil.synchronizeClusterSchemas( clusterSchema );
     }
   }
 
@@ -8492,36 +8465,41 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   public void runFile() {
-    executeFile( true, false, false, false, false, null, false );
+    executeFile( true, false, false, false, false, null, false, false );
+  }
+
+  public void runOptionsFile() {
+    executeFile( true, false, false, false, false, null, false, true );
   }
 
   public void replayTransformation() {
     TransExecutionConfiguration tc = this.getTransExecutionConfiguration();
     executeFile(
       tc.isExecutingLocally(), tc.isExecutingRemotely(), tc.isExecutingClustered(), false, false, new Date(),
-      false );
+      false, false );
   }
 
   public void previewFile() {
-    executeFile( true, false, false, true, false, null, true );
+    executeFile( true, false, false, true, false, null, true, false );
   }
 
   public void debugFile() {
-    executeFile( true, false, false, false, true, null, true );
+    executeFile( true, false, false, false, true, null, true, false );
   }
 
   public void executeFile( boolean local, boolean remote, boolean cluster, boolean preview, boolean debug,
-    Date replayDate, boolean safe ) {
+      Date replayDate, boolean safe, boolean show ) {
 
     TransMeta transMeta = getActiveTransformation();
     if ( transMeta != null ) {
-      executeTransformation(
-        transMeta, local, remote, cluster, preview, debug, replayDate, safe, transExecutionConfiguration
-          .getLogLevel() );
+      transMeta.setShowTransDialog( show || transMeta.isAlwaysShowTransCheckbox() );
+      executeTransformation( transMeta, local, remote, cluster, preview, debug, replayDate, safe,
+          transExecutionConfiguration.getLogLevel() );
     }
 
     JobMeta jobMeta = getActiveJob();
     if ( jobMeta != null ) {
+      jobMeta.setShowJobDialog( show || jobMeta.isAlwaysShowJobCheckbox() );
       executeJob( jobMeta, local, remote, replayDate, safe, null, 0 );
     }
 
@@ -8601,8 +8579,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
         } else if ( steps ) {
           TransGraph transGraph = getActiveTransGraph();
           if ( transGraph != null && transGraph.getLastMove() != null ) {
-            pasteXML( transGraph.getManagedObject(), clipContent, transGraph.screen2real(
-              transGraph.getLastMove().x, transGraph.getLastMove().y ) );
+            pasteXML( transGraph.getManagedObject(), clipContent, transGraph.getLastMove() );
           }
         } else if ( jobEntries ) {
           JobGraph jobGraph = getActiveJobGraph();
@@ -8638,6 +8615,10 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
 
   public void editJobEntry( JobMeta jobMeta, JobEntryCopy je ) {
     delegates.jobs.editJobEntry( jobMeta, je );
+  }
+
+  public void deleteJobEntryCopies( JobMeta jobMeta, JobEntryCopy[] jobEntry ) {
+    delegates.jobs.deleteJobEntryCopies( jobMeta, jobEntry );
   }
 
   public void deleteJobEntryCopies( JobMeta jobMeta, JobEntryCopy jobEntry ) {
@@ -8772,12 +8753,20 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     delegates.jobs.addJobGraph( jobMeta );
   }
 
+  public boolean addSpoonBrowser( String name, String urlString, LocationListener locationListener, boolean showControls ) {
+    return delegates.tabs.addSpoonBrowser( name, urlString, locationListener, showControls );
+  }
+
   public boolean addSpoonBrowser( String name, String urlString, LocationListener locationListener ) {
-    return delegates.tabs.addSpoonBrowser( name, urlString, locationListener );
+    return delegates.tabs.addSpoonBrowser( name, urlString, locationListener, true );
+  }
+
+  public boolean addSpoonBrowser( String name, String urlString, boolean showControls ) {
+    return delegates.tabs.addSpoonBrowser( name, urlString, null, showControls );
   }
 
   public boolean addSpoonBrowser( String name, String urlString ) {
-    return delegates.tabs.addSpoonBrowser( name, urlString, null );
+    return delegates.tabs.addSpoonBrowser( name, urlString, null, true );
   }
 
   public TransExecutionConfiguration getTransExecutionConfiguration() {
@@ -8789,11 +8778,17 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
   }
 
   public String editStep( TransMeta transMeta, StepMeta stepMeta ) {
-    return delegates.steps.editStep( transMeta, stepMeta );
+    String stepname = delegates.steps.editStep( transMeta, stepMeta );
+    sharedObjectSyncUtil.synchronizeSteps( stepMeta );
+    return stepname;
   }
 
   public void dupeStep( TransMeta transMeta, StepMeta stepMeta ) {
     delegates.steps.dupeStep( transMeta, stepMeta );
+  }
+
+  public void delSteps( TransMeta transformation, StepMeta[] steps ) {
+    delegates.steps.delSteps( transformation, steps );
   }
 
   public void delStep( TransMeta transMeta, StepMeta stepMeta ) {
@@ -9267,6 +9262,8 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     setBlockOnOpen( false );
     try {
       open();
+      // Load the last loaded files
+      loadLastUsedFiles();
       waitForDispose();
       // runEventLoop2(getShell());
     } catch ( Throwable e ) {
@@ -9296,7 +9293,7 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     } else {
       new ErrorDialog(
         loginDialog.getShell(), BaseMessages.getString( PKG, "Spoon.Dialog.LoginFailed.Title" ), BaseMessages
-          .getString( PKG, "Spoon.Dialog.LoginFailed.Message", t ), t );
+        .getString( PKG, "Spoon.Dialog.LoginFailed.Message", t ), t );
     }
   }
 
@@ -9316,4 +9313,5 @@ public class Spoon extends ApplicationWindow implements AddUndoPositionInterface
     AuthProviderDialog authProviderDialog = new AuthProviderDialog( shell );
     authProviderDialog.show();
   }
+
 }

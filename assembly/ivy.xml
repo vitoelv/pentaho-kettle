@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ivy-module version="2.0">
+<ivy-module version="2.0" xmlns:m="http://ant.apache.org/ivy/maven">
   <info organisation="${ivy.artifact.group}" module="${ivy.artifact.id}" revision="${project.revision}" />
   <configurations>
     <conf name="default" />
     <conf name="test" visibility="private" />
     <conf name="swtlibs"/>
-    <conf name="pdf-docs" />
     <conf name="oss-licenses" />
     <conf name="plugins"/>
     <conf name="launcher" />
+    <conf name="dataservice-jdbc" />
+    <conf name="pentaho-system" />
   </configurations>
   
   <publications>
@@ -17,16 +18,35 @@
   
   <dependencies defaultconf="default->default">
     <!-- Kettle module dependencies-->
-    <dependency org="${ivy.artifact.group}" name="kettle-core"          rev="${project.revision}" changing="true"/>
-    <dependency org="${ivy.artifact.group}" name="kettle-engine"        rev="${project.revision}" changing="true"/>
-    <dependency org="${ivy.artifact.group}" name="kettle-dbdialog"      rev="${project.revision}" changing="true"/>
-    <dependency org="${ivy.artifact.group}" name="kettle-ui-swt"        rev="${project.revision}" changing="true">
+    <dependency org="${ivy.artifact.group}" name="kettle-core"          rev="${project.revision}" changing="true" force="true"/>
+    <dependency org="${ivy.artifact.group}" name="kettle-engine"        rev="${project.revision}" changing="true" force="true"/>
+    <dependency org="${ivy.artifact.group}" name="kettle-dbdialog"      rev="${project.revision}" changing="true" force="true"/>
+    <dependency org="${ivy.artifact.group}" name="kettle-ui-swt"        rev="${project.revision}" changing="true" force="true">
       <exclude name="swt-linux-x86_64"/>
     </dependency>
     
+    <dependency org="pentaho" name="pdi-osgi-bridge-core" rev="${dependency.pdi-osgi-bridge.revision}" changing="true" />
+
+    <!-- Data Service JDBC Driver -->
+    <dependency org="pentaho" name="pdi-dataservice-driver-bundle" rev="${project.revision}" changing="true" conf="dataservice-jdbc->default" transitive="false">
+      <artifact name="pdi-dataservice-driver-bundle" type="zip"/>
+    </dependency>
+
     <!-- Kettle plugin dependencies-->
-    <dependency org="${ivy.artifact.group}" name="market" rev="${project.revision}" changing="true" conf="plugins->default">
-        <artifact name="market" type="zip"/>
+    <dependency org="${ivy.artifact.group}" name="kettle-version-checker" rev="${project.revision}" changing="true" conf="plugins->default">
+      <artifact name="kettle-version-checker" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="kettle-dummy-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+      <artifact name="kettle-dummy-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="kettle-s3csvinput-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+      <artifact name="kettle-s3csvinput-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="kettle-shapefilereader-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+      <artifact name="kettle-shapefilereader-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="kettle-drools5-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+      <artifact name="kettle-drools5-plugin" type="zip"/>
     </dependency>
     <dependency org="${ivy.artifact.group}" name="kettle-gpload-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
         <artifact name="kettle-gpload-plugin" type="zip"/>
@@ -43,6 +63,33 @@
     <dependency org="${ivy.artifact.group}" name="kettle5-log4j-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
         <artifact name="kettle5-log4j-plugin" type="zip"/>
     </dependency>
+    <dependency org="${ivy.artifact.group}" name="pdi-google-analytics-plugin-ce" rev="${project.revision}" changing="true" conf="plugins->default">
+        <artifact name="pdi-google-analytics-plugin-ce" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="pdi-salesforce-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+        <artifact name="pdi-salesforce-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="ms-access-bulk-loader-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+        <artifact name="ms-access-bulk-loader-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="lucid-db-streaming-loader-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+        <artifact name="lucid-db-streaming-loader-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="gp-bulk-loader-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+        <artifact name="gp-bulk-loader-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="elasticsearch-bulk-insert-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+        <artifact name="elasticsearch-bulk-insert-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="kettle-xml-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+        <artifact name="kettle-xml-plugin" type="zip"/>
+    </dependency>
+    <dependency org="${ivy.artifact.group}" name="kettle-json-plugin" rev="${project.revision}" changing="true" conf="plugins->default">
+        <artifact name="kettle-json-plugin" type="zip"/>
+    </dependency>
+    <dependency org="pentaho" name="pentaho-karaf-assembly" rev="${project.revision}" changing="true" conf="pentaho-system->default" m:classifier="client">
+      <artifact name="pentaho-karaf-assembly" type="zip" m:classifier="client"/>
+    </dependency>
     
     <!-- Pentaho dependencies (non-Kettle), launcher, shim, etc. -->
     <dependency org="pentaho"               name="pentaho-application-launcher"  rev="${dependency.launcher.revision}" conf="launcher->default"/>
@@ -50,16 +97,41 @@
     <dependency org="pentaho" name="pentaho-big-data-plugin" rev="${dependency.pentaho-big-data-plugin.revision}" changing="true" transitive="false" conf="plugins->default">
       <artifact name="pentaho-big-data-plugin" type="zip"/>
     </dependency>
-    <dependency org="pentaho" name="pentaho-mongodb-plugin" rev="${dependency.pentaho-mongodb-plugin.revision}" changing="true" transitive="false" conf="plugins->default">
-      <artifact name="pentaho-mongodb-plugin" type="zip"/>
-    </dependency>
     <dependency org="pentaho" name="pentaho-cassandra-plugin" rev="${dependency.pentaho-cassandra-plugin.revision}" changing="true" transitive="false" conf="plugins->default">
       <artifact name="pentaho-cassandra-plugin" type="zip"/>
+    </dependency>
+    <dependency org="pentaho" name="pdi-spark-plugin" rev="${dependency.pdi-spark-plugin.revision}" changing="true" transitive="false" conf="plugins->default">
+      <artifact name="pdi-spark-plugin" type="zip"/>
     </dependency>
     <dependency org="pentaho" name="pdi-teradata-tpt-plugin-package" rev="${dependency.pdi-teradata-tpt-plugin.revision}" changing="true" transitive="false" conf="plugins->default">
       <artifact name="pdi-teradata-tpt-plugin-package" type="zip"/>
     </dependency>
-    
+    <dependency org="pentaho" name="pdi-platform-utils-plugin" rev="${dependency.pdi-platform-utils-plugin.revision}" changing="true" transitive="false" conf="plugins->default">
+      <artifact name="pdi-platform-utils-plugin" type="zip"/>
+    </dependency>
+    <dependency org="pentaho" name="VerticaBulkLoader" rev="${dependency.vertica-bulkloader-plugin.revision}" conf="plugins->default" changing="true" transitive="false">
+      <artifact name="VerticaBulkLoader" type="zip" ext="zip" />
+    </dependency>
+    <dependency org="pentaho-kettle" name="pdi-pur-plugin" rev="${dependency.pdi-pur-plugin.revision}" changing="true" transitive="false" conf="plugins->default">
+      <artifact name="pdi-pur-plugin" type="zip"/>
+    </dependency>
+
+
+    <dependency org="pentaho" name="pentaho-platform-extensions"  rev="${dependency.pentaho-platform.revision}" transitive="false"/>
+    <dependency org="org.slf4j" name="slf4j-api" rev="1.7.5"/>
+    <dependency org="org.slf4j" name="slf4j-log4j12" rev="1.7.5"/>
+    <dependency org="org.springframework" name="spring-aop"     rev="${dependency.spring.framework.revision}" />
+    <dependency org="org.springframework" name="spring-beans"   rev="${dependency.spring.framework.revision}" />
+    <dependency org="org.springframework" name="spring-context" rev="${dependency.spring.framework.revision}" />
+    <dependency org="org.springframework.security" name="spring-security-core" rev="${dependency.spring.security.revision}" />
+    <dependency org="org.glassfish.metro" name="webservices-api" rev="2.1" transitive="false"/>
+    <dependency org="org.glassfish.metro" name="webservices-rt" rev="2.1" transitive="false"/>
+
+    <!-- pentaho-metaverse -->
+    <dependency org="pentaho" name="pentaho-metaverse-api" rev="${project.revision}" changing="true" transitive="false"/>
+    <dependency org="pentaho" name="pentaho-platform-api"  rev="${dependency.pentaho-platform.revision}" transitive="false"/>
+    <dependency org="pentaho" name="pentaho-platform-core"  rev="${dependency.pentaho-platform.revision}" transitive="false"/>
+
     <!--  Pentaho reporting dependencies -->
     <dependency org="${dependency.reporting-engine.group}" name="pentaho-reporting-engine-classic-extensions" rev="${dependency.pentaho-reporting.revision}" changing="true">
       <exclude name="pentaho-reporting-engine-classic-core-test"/>
@@ -78,81 +150,28 @@
     <dependency org="${dependency.reporting-engine.group}" name="pentaho-reporting-engine-legacy-functions" rev="${dependency.pentaho-reporting.revision}" transitive="true" changing="true"/>
     <dependency org="${dependency.reporting-engine.group}" name="pentaho-reporting-engine-wizard-core"  rev="${dependency.pentaho-reporting.revision}" changing="true" transitive="true"/>
     
-    
- 	<!-- PDF Documentation for bundling -->
-	<dependency org="pentaho-doc" name="bigdata_guide" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="bigdata_guide" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="components" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="components" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="config_pdi_server" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="config_pdi_server" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="getting_started_with_instaview" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="getting_started_with_instaview" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="getting_started_with_pdi" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="getting_started_with_pdi" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="install_client_pdi" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="install_client_pdi" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="install_graphical" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="install_graphical" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="install_graphical_pdi" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="install_graphical_pdi" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="install_overview_pdi" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="install_overview_pdi" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="install_pdi" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="install_pdi" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="pdi_admin_guide" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="pdi_admin_guide" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="pdi_embed_extend_guide" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="pdi_embed_extend_guide" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="pdi_user_guide" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="pdi_user_guide" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="pdi_whats_new" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="pdi_whats_new" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="reporting_embedders_guide" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="reporting_embedders_guide" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="supported_components" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="supported_components" type="pdf" />
-	</dependency>
-	<dependency org="pentaho-doc" name="workflows" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-		<artifact name="workflows" type="pdf" />
-	</dependency>
-    <dependency org="pentaho-doc" name="pdi_security" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-        <artifact name="pdi_security" type="pdf" />
+    <!--  OSS Licenses file -->
+    <dependency org="pentaho" name="oss-licenses" rev="${dependency.oss-licenses.revision}" conf="oss-licenses->default">
+      <artifact name="oss-licenses" type="zip" />
     </dependency>
-    <dependency org="pentaho-doc" name="troubleshooting_guide_pdi" rev="${dependency.documentation.revision}" conf="pdf-docs->default">
-        <artifact name="troubleshooting_guide_pdi" type="pdf" />
-    </dependency>
-    
- 	<!--  OSS Licenses file -->
-	<dependency org="pentaho" name="oss-licenses" rev="${dependency.oss-licenses.revision}" conf="oss-licenses->default">
-		<artifact name="oss-licenses" type="zip" />
-	</dependency>
      
     <!-- The OS-specific libraries are bundled together, unzip them all for assembly -->
     <dependency org="org.eclipse"          name="swtlibs"               rev="4.3.2" conf="swtlibs->default" transitive="false">
       <artifact name="swtlibs" type="zip"/>
     </dependency>
       
+	    <!-- Karaf Dependencies -->
+    <dependency org="org.apache.karaf" name="org.apache.karaf.main" rev="3.0.3"  transitive="false"/>
+    <dependency org="org.apache.karaf" name="org.apache.karaf.util" rev="3.0.3"  transitive="false"/>
+    <dependency org="org.apache.karaf.jaas" name="org.apache.karaf.jaas.boot" rev="2.4.2"  transitive="false"/>
+    <dependency org="org.apache.felix" name="org.apache.felix.main" rev="4.2.1"  transitive="false"/>
+
+	
     <!-- Third-party JDBC dependencies -->
     <dependency org="org.apache.derby"     name="derby"                 rev="10.2.1.6"      transitive="false"/>
     <dependency org="org.apache.derby"     name="derbyclient"           rev="10.2.1.6"      transitive="false"/>
     <dependency org="com.h2database"       name="h2"                    rev="1.2.131"       transitive="false"/>
-    <dependency org="hsqldb"               name="hsqldb"                rev="1.8.0.7"       transitive="false"/>
+    <dependency org="org.hsqldb"           name="hsqldb"                rev="2.3.2"         transitive="false"/>
     <dependency org="infobright"           name="infobright-core"       rev="3.4"           transitive="false"/>
     <dependency org="org.firebirdsql.jdbc" name="jaybird"               rev="2.1.6"         transitive="false"/>
     <dependency org="net.sf.jt400"         name="jt400"                 rev="6.1"           transitive="false"/>  
@@ -163,10 +182,23 @@
     <dependency org="com.sap"              name="sapdbc"                rev="7.4.4"         transitive="false"/>
     <dependency org="org.xerial"           name="sqlite-jdbc"           rev="3.7.2"         transitive="false"/>
     <dependency org="jaxen"                name="jaxen"                 rev="1.1.1"         transitive="false"/>
-    
+    <dependency org="javax.servlet"        name="javax.servlet-api"    rev="3.0.1"           transitive="false"/>
     <!-- Other third-party dependencies -->
     <dependency org="asm"                  name="asm"                   rev="3.2"           transitive="false"/>
     <dependency org="net.sf.saxon"         name="saxon-dom"             rev="9.1.0.8"       transitive="false"/>
-    
+    <dependency org="com.tinkerpop.blueprints" name="blueprints-core"   rev="2.6.0"         transitive="false"/>
+    <dependency org="commons-configuration" name="commons-configuration" rev="1.9"          transitive="false"/>
+    <dependency org="net.sf.flexjson"      name="flexjson"              rev="2.1"           transitive="false"/>
+    <dependency org="com.fasterxml.jackson.core" name="jackson-annotations" rev="2.3.3"     transitive="false"/>
+    <dependency org="com.fasterxml.jackson.core" name="jackson-databind" rev="2.3.3"        transitive="false"/>
+    <dependency org="com.fasterxml.jackson.core" name="jackson-core" rev="2.3.3"            transitive="false"/>
+    <!-- To support Enunciate Annotations in Resource classes -->
+    <dependency org="org.codehaus.enunciate" name="enunciate-jersey-rt" rev="1.27"          transitive="false" />
+    <dependency org="org.codehaus.enunciate" name="enunciate-core-annotations" rev="1.27"   transitive="false" />
+
+    <dependency org="org.codehaus.jackson" name="jackson-xc" rev="1.9.3" transitive="false"/>
+    <dependency org="com.sun.jersey.contribs" name="jersey-multipart" rev="1.16" transitive="false"/>
+
+    <exclude org="javax.servlet"   module="servlet-api"/>
   </dependencies>
 </ivy-module>

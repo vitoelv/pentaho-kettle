@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
+import java.net.InetAddress;
 import java.net.SocketTimeoutException;
 import java.nio.charset.Charset;
 import java.sql.Blob;
@@ -37,6 +38,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.sql.Types;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -230,7 +232,7 @@ public class ValueMetaBase implements ValueMetaInterface {
         }
         break;
       case TYPE_BIGNUMBER:
-        String alternativeBigNumberMask = EnvUtil.getSystemProperty( Const.KETTLE_DEFAULT_NUMBER_FORMAT );
+        String alternativeBigNumberMask = EnvUtil.getSystemProperty( Const.KETTLE_DEFAULT_BIGNUMBER_FORMAT );
         if ( Const.isEmpty( alternativeBigNumberMask ) ) {
           setConversionMask( "#.###############################################;"
               + "-#.###############################################" );
@@ -692,19 +694,16 @@ public class ValueMetaBase implements ValueMetaInterface {
     }
 
     try {
-      // PDI 5595 need to add ISO 8601 support for java 1.6
-      String df = ( getDateFormat() != null ) ? getDateFormat().toPattern() : null;
-      if ( df != null ) {
-        if ( getQuotesBeforeSymbol( df, "Z" ) % 2 == 0 ) {
-          if ( string.contains( "Z" ) ) {
-            string = string.replace( "Z", "UTC" );
-          } else if ( string.matches( ".*[\\+|\\-]\\d\\d:\\d\\d" ) ) {
-            int lPos = string.lastIndexOf( ":" );
-            string = string.substring( 0, lPos ) + string.substring( lPos + 1 );
-          }
-        }
+      ParsePosition pp = new ParsePosition( 0 );
+      Date result = getDateFormat().parse( string, pp );
+      if ( pp.getErrorIndex() >= 0 ) {
+        // error happen
+        throw new ParseException( string, pp.getErrorIndex() );
       }
-      return getDateFormat().parse( string );
+      // some chars can be after pp.getIndex(). That means, not full value was parsed. For example, for value
+      // "25-03-1918 11:54" and format "dd-MM-yyyy", value will be "25-03-1918 00:00" without any exception.
+      // If there are only spaces after pp.getIndex() - that means full values was parsed
+      return result;
     } catch ( ParseException e ) {
       String dateFormat = ( getDateFormat() != null ) ? getDateFormat().toPattern() : "null";
       throw new KettleValueException( toString() + " : couldn't convert string [" + string
@@ -2706,7 +2705,7 @@ public class ValueMetaBase implements ValueMetaInterface {
       writeString( outputStream, dateFormatLocale != null ? dateFormatLocale.toString() : null );
 
       // date time zone?
-      writeString( outputStream, dateFormatTimeZone != null ? dateFormatTimeZone.toString() : null );
+      writeString( outputStream, dateFormatTimeZone != null ? dateFormatTimeZone.getID() : null );
 
       // string to number conversion lenient?
       outputStream.writeBoolean( lenientStringToNumber );
@@ -3086,6 +3085,12 @@ public class ValueMetaBase implements ValueMetaInterface {
                 break;
               case TYPE_BINARY:
                 string = XMLHandler.encodeBinaryData( (byte[]) object );
+                break;
+              case TYPE_TIMESTAMP:
+                string = XMLHandler.timestamp2string( (Timestamp)  object );
+                break;
+              case TYPE_INET:
+                string = ( (InetAddress) object ).toString();
                 break;
               default:
                 throw new IOException( toString() + " : Unable to serialize data type to XML " + getType() );
@@ -4351,6 +4356,7 @@ public class ValueMetaBase implements ValueMetaInterface {
       switch ( type ) {
         case java.sql.Types.CHAR:
         case java.sql.Types.VARCHAR:
+        case java.sql.Types.NVARCHAR:
         case java.sql.Types.LONGVARCHAR: // Character Large Object
           valtype = ValueMetaInterface.TYPE_STRING;
           if ( !ignoreLength ) {
@@ -4359,6 +4365,7 @@ public class ValueMetaBase implements ValueMetaInterface {
           break;
 
         case java.sql.Types.CLOB:
+        case java.sql.Types.NCLOB:
           valtype = ValueMetaInterface.TYPE_STRING;
           length = DatabaseMeta.CLOB_LENGTH;
           isClob = true;
@@ -4476,6 +4483,7 @@ public class ValueMetaBase implements ValueMetaInterface {
               precision = -1;
             }
           }
+
           break;
 
         case java.sql.Types.TIMESTAMP:
@@ -4569,7 +4577,13 @@ public class ValueMetaBase implements ValueMetaInterface {
         }
       }
 
-      return v;
+      ValueMetaInterface newV = null;
+      try {
+        newV = databaseMeta.getDatabaseInterface().customizeValueFromSQLType( v, rm, index );
+      } catch ( SQLException e ) {
+        throw new SQLException( e );
+      }
+      return newV == null ? v : newV;
     } catch ( Exception e ) {
       throw new KettleDatabaseException( "Error determining value metadata from SQL resultset metadata", e );
     }

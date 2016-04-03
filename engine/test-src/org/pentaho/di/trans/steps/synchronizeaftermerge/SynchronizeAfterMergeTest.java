@@ -1,3 +1,25 @@
+/*! ******************************************************************************
+ *
+ * Pentaho Data Integration
+ *
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ *
+ *******************************************************************************
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ ******************************************************************************/
+
 package org.pentaho.di.trans.steps.synchronizeaftermerge;
 
 import static org.mockito.Matchers.anyString;
@@ -10,6 +32,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -45,6 +68,7 @@ public class SynchronizeAfterMergeTest {
   private StepMeta injectorStep;
   private StepMeta synchStep;
   private static List<RowMetaAndData> inputList;
+  private static PluginInterface mockDbPlugin;
 
   public static class SynchDBMockIface extends DBMockIface {
 
@@ -63,7 +87,7 @@ public class SynchronizeAfterMergeTest {
 
     PluginRegistry preg = PluginRegistry.getInstance();
 
-    PluginInterface mockDbPlugin = mock( PluginInterface.class );
+    mockDbPlugin = mock( PluginInterface.class );
     when( mockDbPlugin.matches( anyString() ) ).thenReturn( true );
     when( mockDbPlugin.isNativePlugin() ).thenReturn( true );
     when( mockDbPlugin.getMainType() ).thenAnswer( new Answer<Class<?>>() {
@@ -91,9 +115,9 @@ public class SynchronizeAfterMergeTest {
     RowMetaInterface rm = new RowMeta();
 
     ValueMetaInterface[] valuesMeta = {
-      new ValueMeta( "personName", ValueMeta.TYPE_STRING ),
-      new ValueMeta( "key", ValueMeta.TYPE_STRING ),
-      new ValueMeta( "flag", ValueMeta.TYPE_STRING ) };
+        new ValueMeta( "personName", ValueMeta.TYPE_STRING ),
+        new ValueMeta( "key", ValueMeta.TYPE_STRING ),
+        new ValueMeta( "flag", ValueMeta.TYPE_STRING ) };
 
     for ( int i = 0; i < valuesMeta.length; i++ ) {
       rm.addValueMeta( valuesMeta[i] );
@@ -102,6 +126,11 @@ public class SynchronizeAfterMergeTest {
 
     inputList.add( new RowMetaAndData( rm, r1 ) );
 
+  }
+
+  @AfterClass
+  public static void tearDown() throws Exception {
+    PluginRegistry.getInstance().removePlugin( DatabasePluginType.class, mockDbPlugin );
   }
 
   @Before

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -32,6 +32,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import org.apache.commons.lang.StringUtils;
+import org.pentaho.di.ExecutionConfiguration;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.Result;
@@ -50,7 +52,7 @@ import org.pentaho.di.repository.Repository;
 import org.pentaho.di.repository.RepositoryMeta;
 import org.w3c.dom.Node;
 
-public class JobExecutionConfiguration implements Cloneable {
+public class JobExecutionConfiguration implements ExecutionConfiguration {
   public static final String XML_TAG = "job_execution_configuration";
 
   private final LogChannelInterface log = LogChannel.GENERAL;
@@ -90,6 +92,8 @@ public class JobExecutionConfiguration implements Cloneable {
   private boolean expandingRemoteJob;
 
   private Map<String, String> extensionOptions;
+
+  private Long passedBatchId;
 
   public JobExecutionConfiguration() {
     executingLocally = true;
@@ -375,6 +379,9 @@ public class JobExecutionConfiguration implements Cloneable {
 
     xml.append( "    " ).append( XMLHandler.addTagValue( "gather_metrics", gatheringMetrics ) );
     xml.append( "    " ).append( XMLHandler.addTagValue( "expand_remote_job", expandingRemoteJob ) );
+    if ( passedBatchId != null ) {
+      xml.append( "    " ).append( XMLHandler.addTagValue( "passedBatchId", passedBatchId ) );
+    }
 
     // The source rows...
     //
@@ -461,6 +468,11 @@ public class JobExecutionConfiguration implements Cloneable {
     startCopyNr = Const.toInt( XMLHandler.getTagValue( trecNode, "start_copy_nr" ), 0 );
 
     gatheringMetrics = "Y".equalsIgnoreCase( XMLHandler.getTagValue( trecNode, "gather_metrics" ) );
+
+    String sPassedBatchId = XMLHandler.getTagValue( trecNode, "passedBatchId" );
+    if ( !StringUtils.isEmpty( sPassedBatchId ) ) {
+      passedBatchId = Long.parseLong( sPassedBatchId );
+    }
 
     Node resultNode = XMLHandler.getSubNode( trecNode, Result.XML_TAG );
     if ( resultNode != null ) {
@@ -652,5 +664,13 @@ public class JobExecutionConfiguration implements Cloneable {
 
   public void setExtensionOptions( Map<String, String> extensionOptions ) {
     this.extensionOptions = extensionOptions;
+  }
+
+  public Long getPassedBatchId() {
+    return passedBatchId;
+  }
+
+  public void setPassedBatchId( Long passedBatchId ) {
+    this.passedBatchId = passedBatchId;
   }
 }

@@ -39,8 +39,9 @@ import java.util.regex.Pattern;
 
 import javax.mail.Flags.Flag;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileType;
+import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileSystemException;
+import org.apache.commons.vfs2.FileType;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
@@ -76,6 +77,9 @@ import org.w3c.dom.Node;
 
 public class JobEntryGetPOP extends JobEntryBase implements Cloneable, JobEntryInterface {
   private static Class<?> PKG = JobEntryGetPOP.class; // for i18n purposes, needed by Translator2!!
+
+  static final int FOLDER_OUTPUT = 0;
+  static final int FOLDER_ATTACHMENTS = 1;
 
   public int actiontype;
 
@@ -723,6 +727,10 @@ public class JobEntryGetPOP extends JobEntryBase implements Cloneable, JobEntryI
     return attachmentfolder;
   }
 
+  public String getRealAttachmentFolder() {
+    return environmentSubstitute( getAttachmentFolder() );
+  }
+
   public void setAttachmentFolder( String foldername ) {
     this.attachmentfolder = foldername;
   }
@@ -848,71 +856,11 @@ public class JobEntryGetPOP extends JobEntryBase implements Cloneable, JobEntryI
       boolean usePOP3 = getProtocol().equals( MailConnectionMeta.PROTOCOL_STRING_POP3 );
       boolean moveafter = false;
       int nbrmailtoretrieve =
-        usePOP3 ? getRetrievemails() == 2 ? Const.toInt( getFirstMails(), 0 ) : 0 : Const.toInt(
+        usePOP3 ? ( getRetrievemails() == 2 ? Const.toInt( getFirstMails(), 0 ) : 0 ) : Const.toInt(
           getFirstIMAPMails(), 0 );
 
-      String realOutputFolder = getRealOutputDirectory();
-      String targetAttachmentFolder = null;
-      if ( getActionType() == MailConnectionMeta.ACTION_TYPE_GET ) {
-        FileObject fileObject = KettleVFS.getFileObject( realOutputFolder, this );
-        // Check if output folder exists
-        if ( fileObject.exists() ) {
-          if ( fileObject.getType() != FileType.FOLDER ) {
-            throw new KettleException( BaseMessages.getString(
-              PKG, "JobGetMailsFromPOP.Error.NotAFolderNot", realOutputFolder ) );
-          }
-          if ( isDebug() ) {
-            logDebug( BaseMessages.getString( PKG, "JobGetMailsFromPOP.Log.OutputFolderExists", realOutputFolder ) );
-          }
-        } else {
-          if ( isCreateLocalFolder() ) {
-            if ( isDetailed() ) {
-              logDetailed( BaseMessages.getString(
-                PKG, "JobGetMailsFromPOP.Log.OutputFolderNotExist", realOutputFolder ) );
-            }
-            // create folder
-            fileObject.createFolder();
-          } else {
-            throw new KettleException( BaseMessages.getString( PKG, "JobGetMailsFromPOP.FolderNotExists1.Label" )
-              + realOutputFolder + BaseMessages.getString( PKG, "JobGetMailsFromPOP.FolderNotExists2.Label" ) );
-          }
-        }
-
-        targetAttachmentFolder = KettleVFS.getFilename( fileObject );
-        // check for attachment folder
-        boolean useDifferentFolderForAttachment = ( isSaveAttachment() && isDifferentFolderForAttachment() );
-
-        if ( useDifferentFolderForAttachment ) {
-          String realFolderAttachment = environmentSubstitute( getAttachmentFolder() );
-          if ( Const.isEmpty( realFolderAttachment ) ) {
-            throw new KettleException( BaseMessages
-              .getString( PKG, "JobGetMailsFromPOP.Error.AttachmentFolderEmpty" ) );
-          }
-          //close old file object
-          try {
-            fileObject.close();
-          } catch ( IOException ex ) { /* Ignore */
-          }
-          //reuse old link
-          fileObject = KettleVFS.getFileObject( realFolderAttachment, this );
-
-          if ( !fileObject.exists() ) {
-            throw new KettleException( BaseMessages.getString(
-              PKG, "JobGetMailsFromPOP.Error.AttachmentFolderNotExist", realFolderAttachment ) );
-          }
-
-          if ( fileObject.getType() != FileType.FOLDER ) {
-            throw new KettleException( BaseMessages.getString(
-              PKG, "JobGetMailsFromPOP.Error.AttachmentFolderNotAFolder", realFolderAttachment ) );
-          }
-          targetAttachmentFolder = KettleVFS.getFilename( fileObject );
-        }
-        // Close fileObject! we don't need it anymore ...
-        try {
-          fileObject.close();
-        } catch ( IOException ex ) { /* Ignore */
-        }
-      } // end if get
+      String realOutputFolder = createOutputDirectory( JobEntryGetPOP.FOLDER_OUTPUT );
+      String targetAttachmentFolder = createOutputDirectory( JobEntryGetPOP.FOLDER_ATTACHMENTS );
 
       // Check destination folder
       String realMoveToIMAPFolder = environmentSubstitute( getMoveToIMAPFolder() );
@@ -1140,7 +1088,7 @@ public class JobEntryGetPOP extends JobEntryBase implements Cloneable, JobEntryI
 
       messagesCount =
         nbrmailtoretrieve > 0
-          ? nbrmailtoretrieve > messagesCount ? messagesCount : nbrmailtoretrieve : messagesCount;
+          ? ( nbrmailtoretrieve > messagesCount ? messagesCount : nbrmailtoretrieve ) : messagesCount;
 
       if ( messagesCount > 0 ) {
         switch ( getActionType() ) {
@@ -1360,5 +1308,78 @@ public class JobEntryGetPOP extends JobEntryBase implements Cloneable, JobEntryI
       references.add( reference );
     }
     return references;
+  }
+
+  String createOutputDirectory( int folderType ) throws KettleException, FileSystemException, IllegalArgumentException {
+    if ( ( folderType != JobEntryGetPOP.FOLDER_OUTPUT ) && ( folderType != JobEntryGetPOP.FOLDER_ATTACHMENTS ) ) {
+      throw new IllegalArgumentException( "Invalid folderType argument" );
+    }
+    String folderName = "";
+    switch ( folderType ) {
+      case JobEntryGetPOP.FOLDER_OUTPUT:
+        folderName = getRealOutputDirectory();
+        break;
+      case JobEntryGetPOP.FOLDER_ATTACHMENTS:
+        if ( isSaveAttachment() && isDifferentFolderForAttachment() ) {
+          folderName = getRealAttachmentFolder();
+        } else {
+          folderName = getRealOutputDirectory();
+        }
+        break;
+    }
+    if ( Const.isEmpty( folderName ) ) {
+      switch( folderType ) {
+        case JobEntryGetPOP.FOLDER_OUTPUT:
+          throw new KettleException( BaseMessages
+            .getString( PKG, "JobGetMailsFromPOP.Error.OutputFolderEmpty" ) );
+        case JobEntryGetPOP.FOLDER_ATTACHMENTS:
+          throw new KettleException( BaseMessages
+            .getString( PKG, "JobGetMailsFromPOP.Error.AttachmentFolderEmpty" ) );
+      }
+    }
+    FileObject folder = KettleVFS.getFileObject( folderName, this );
+    if ( folder.exists() ) {
+      if ( folder.getType() != FileType.FOLDER ) {
+        switch( folderType ) {
+          case JobEntryGetPOP.FOLDER_OUTPUT:
+            throw new KettleException( BaseMessages.getString(
+              PKG, "JobGetMailsFromPOP.Error.NotAFolderNot", folderName ) );
+          case JobEntryGetPOP.FOLDER_ATTACHMENTS:
+            throw new KettleException( BaseMessages.getString(
+              PKG, "JobGetMailsFromPOP.Error.AttachmentFolderNotAFolder", folderName ) );
+        }
+      }
+      if ( isDebug() ) {
+        switch( folderType ) {
+          case JobEntryGetPOP.FOLDER_OUTPUT:
+            logDebug( BaseMessages.getString( PKG, "JobGetMailsFromPOP.Log.OutputFolderExists", folderName ) );
+            break;
+          case JobEntryGetPOP.FOLDER_ATTACHMENTS:
+            logDebug( BaseMessages.getString( PKG, "JobGetMailsFromPOP.Log.AttachmentFolderExists", folderName ) );
+            break;
+        }
+      }
+    } else {
+      if ( isCreateLocalFolder() ) {
+        folder.createFolder();
+      } else {
+        switch( folderType ) {
+          case JobEntryGetPOP.FOLDER_OUTPUT:
+            throw new KettleException( BaseMessages.getString(
+              PKG, "JobGetMailsFromPOP.Error.OutputFolderNotExist", folderName ) );
+          case JobEntryGetPOP.FOLDER_ATTACHMENTS:
+            throw new KettleException( BaseMessages.getString(
+              PKG, "JobGetMailsFromPOP.Error.AttachmentFolderNotExist", folderName ) );
+        }
+      }
+    }
+
+    String returnValue = KettleVFS.getFilename( folder );
+    try {
+      folder.close();
+    } catch ( IOException ignore ) {
+      //Ignore error, as the folder was created successfully
+    }
+    return returnValue;
   }
 }

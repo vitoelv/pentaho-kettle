@@ -23,13 +23,11 @@
 package org.pentaho.di.trans.steps.excelinput;
 
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.TimeZone;
 
-import org.apache.commons.vfs.FileObject;
-import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.ResultFile;
 import org.pentaho.di.core.RowSet;
@@ -39,8 +37,8 @@ import org.pentaho.di.core.fileinput.FileInputList;
 import org.pentaho.di.core.playlist.FilePlayListAll;
 import org.pentaho.di.core.playlist.FilePlayListReplay;
 import org.pentaho.di.core.row.RowMeta;
-import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
+import org.pentaho.di.core.row.value.ValueMetaNumber;
 import org.pentaho.di.core.spreadsheet.KCell;
 import org.pentaho.di.core.spreadsheet.KCellType;
 import org.pentaho.di.core.spreadsheet.KSheet;
@@ -57,7 +55,6 @@ import org.pentaho.di.trans.step.errorhandling.CompositeFileErrorHandler;
 import org.pentaho.di.trans.step.errorhandling.FileErrorHandler;
 import org.pentaho.di.trans.step.errorhandling.FileErrorHandlerContentLineNumber;
 import org.pentaho.di.trans.step.errorhandling.FileErrorHandlerMissingFiles;
-import org.pentaho.di.trans.steps.excelinput.staxpoi.StaxPoiCell;
 
 /**
  * This class reads data from one or more Microsoft Excel files.
@@ -105,14 +102,6 @@ public class ExcelInput extends BaseStep implements StepInterface {
 
       ValueMetaInterface targetMeta = data.outputRowMeta.getValueMeta( rowcolumn );
       ValueMetaInterface sourceMeta = null;
-
-      if ( meta.getSpreadSheetType() == SpreadSheetType.SAX_POI ) {
-        if ( targetMeta.isDate() ) {
-          Double dateValue = Double.valueOf( cell.getContents() );
-          Calendar calendar = DateUtil.getJavaCalendarUTC( dateValue, false );
-          cell = new StaxPoiCell( calendar.getTime(), KCellType.DATE, cell.getRow() );
-        }
-      }
 
       try {
         checkType( cell, targetMeta );
@@ -204,7 +193,7 @@ public class ExcelInput extends BaseStep implements StepInterface {
                 case ValueMetaInterface.TYPE_DATE:
                   // number to string conversion (20070522.00 --> "20070522")
                   //
-                  ValueMetaInterface valueMetaNumber = new ValueMeta( "num", ValueMetaInterface.TYPE_NUMBER );
+                  ValueMetaInterface valueMetaNumber = new ValueMetaNumber( "num" );
                   valueMetaNumber.setConversionMask( "#" );
                   Object string = sourceMetaCopy.convertData( valueMetaNumber, r[rowcolumn] );
 
@@ -232,8 +221,8 @@ public class ExcelInput extends BaseStep implements StepInterface {
           logBasic( BaseMessages.getString( PKG, "ExcelInput.Log.WarningProcessingExcelFile", "" + targetMeta, ""
             + data.filename, ex.toString() ) );
         }
-        if ( !errorHandled ) // check if we didn't log an error already for this one.
-        {
+        if ( !errorHandled ) {
+          // check if we didn't log an error already for this one.
           data.errorHandler.handleLineError( excelInputRow.rownr, excelInputRow.sheetName );
           errorHandled = true;
         }
