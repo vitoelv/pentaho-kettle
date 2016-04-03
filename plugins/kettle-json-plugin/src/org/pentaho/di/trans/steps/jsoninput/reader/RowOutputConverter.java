@@ -75,14 +75,11 @@ public class RowOutputConverter {
     return nodevalue;
   }
 
-  public Object[] getRow(Object[] baseOutputRow, Object[] rawPartRow, JsonInputData data ) throws KettleException {
+  public Object[] getRow( Object[] baseOutputRow, Object[] rawPartRow, JsonInputData data ) throws KettleException {
     if ( rawPartRow == null ) {
       return null;
     }
-//    boolean hasErrors = false;
-    // convert
     for ( int i = 0; i < rawPartRow.length; i++ ) {
-//      try {
       int outIdx = data.totalpreviousfields + i;
       Object val =
           getValue( data.outputRowMeta.getValueMeta( outIdx ), data.convertRowMeta.getValueMeta( outIdx ),
@@ -91,21 +88,8 @@ public class RowOutputConverter {
       if ( val == null && data.repeatedFields.get( i ) && data.previousRow != null ) {
         rawPartRow[i] = data.previousRow[outIdx];
       }
-//      } catch ( KettleValueException e ) {
-//        hasErrors = true;
-//        errorFields.add( data.outputRowMeta.getValueMeta( data.totalpreviousfields + i ) );
-//        errors.add( e );
-//      }
     }
     data.previousRow = RowDataUtil.addRowData( baseOutputRow, data.totalpreviousfields, rawPartRow );
-//    if ( hasErrors ) {
-//      KettleConversionException exception =
-//          new KettleConversionException( errors.get( 0 ).getMessage(), errors, errorFields, data.previousRow );
-//      errors.clear();
-//      errorFields.clear();
-//      hasErrors = false;
-//      throw exception;
-//    }
     return data.previousRow;
   }
 

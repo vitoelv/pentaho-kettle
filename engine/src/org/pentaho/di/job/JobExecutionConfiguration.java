@@ -315,7 +315,7 @@ public class JobExecutionConfiguration implements ExecutionConfiguration {
   }
 
   public String getXML() throws IOException {
-    StringBuffer xml = new StringBuffer( 160 );
+    StringBuilder xml = new StringBuilder( 160 );
 
     xml.append( "  <" + XML_TAG + ">" ).append( Const.CR );
 
@@ -499,6 +499,7 @@ public class JobExecutionConfiguration implements ExecutionConfiguration {
     // Verify that the repository exists on the slave server...
     //
     RepositoriesMeta repositoriesMeta = new RepositoriesMeta();
+    repositoriesMeta.getLog().setLogLevel( log.getLogLevel() );
     try {
       repositoriesMeta.readData();
     } catch ( Exception e ) {

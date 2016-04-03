@@ -51,6 +51,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.ResultFile;
 import org.pentaho.di.core.exception.KettleException;
+import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.vfs.KettleVFS;
@@ -89,8 +90,13 @@ public class ExcelWriterStep extends BaseStep implements StepInterface {
     if ( first ) {
 
       first = false;
-      data.outputRowMeta = getInputRowMeta().clone();
-      data.inputRowMeta = getInputRowMeta().clone();
+      if ( r == null ) {
+        data.outputRowMeta = new RowMeta();
+        data.inputRowMeta = new RowMeta();
+      } else {
+        data.outputRowMeta = getInputRowMeta().clone();
+        data.inputRowMeta = getInputRowMeta().clone();
+      }
 
       // if we are supposed to init the file up front, here we go
       if ( !meta.isDoNotOpenNewFileInit() ) {
@@ -517,7 +523,7 @@ public class ExcelWriterStep extends BaseStep implements StepInterface {
         cell.setCellFormula( vMeta.getString( v ) );
       } else {
         // static content case
-        switch( vMeta.getType() ) {
+        switch ( vMeta.getType() ) {
           case ValueMetaInterface.TYPE_DATE:
             if ( v != null && vMeta.getDate( v ) != null ) {
               cell.setCellValue( vMeta.getDate( v ) );

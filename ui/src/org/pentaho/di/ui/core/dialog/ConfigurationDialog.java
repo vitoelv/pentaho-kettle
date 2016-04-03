@@ -54,8 +54,6 @@ import org.pentaho.di.core.Const;
 import org.pentaho.di.core.Props;
 import org.pentaho.di.core.parameters.UnknownParamException;
 import org.pentaho.di.i18n.BaseMessages;
-import org.pentaho.di.job.JobMeta;
-import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.ui.core.PropsUI;
 import org.pentaho.di.ui.core.gui.GUIResource;
 import org.pentaho.di.ui.core.gui.WindowProperty;
@@ -89,6 +87,7 @@ public abstract class ConfigurationDialog extends Dialog {
   protected int margin = Const.MARGIN;
   protected Group gLocal;
   protected Composite stackedLayoutComposite;
+  protected Composite composite;
 
   private TableView wParams;
   private Display display;
@@ -100,7 +99,9 @@ public abstract class ConfigurationDialog extends Dialog {
   private FormData fd_tabFolder;
   private FormData fdExecLocal;
   private FormData fdExecRemote;
+  private FormData fdComposite;
   private CTabFolder tabFolder;
+  private Button alwaysShowOption;
 
   public ConfigurationDialog( Shell parent, ExecutionConfiguration configuration, AbstractMeta meta ) {
     super( parent );
@@ -156,6 +157,8 @@ public abstract class ConfigurationDialog extends Dialog {
   }
 
   protected void ok() {
+    abstractMeta.setAlwaysShowRunOptions( alwaysShowOption.getSelection() );
+    abstractMeta.setShowDialog( alwaysShowOption.getSelection() );
     if ( Const.isOSX() ) {
       // OSX bug workaround.
       wVariables.applyOSXChanges();
@@ -266,16 +269,16 @@ public abstract class ConfigurationDialog extends Dialog {
     tbtmParameters.setControl( parametersComposite );
 
     ColumnInfo[] cParams =
-        { new ColumnInfo( BaseMessages.getString( PKG, prefix + ".ParamsColumn.Argument" ), ColumnInfo.COLUMN_TYPE_TEXT,
+    { new ColumnInfo( BaseMessages.getString( PKG, prefix + ".ParamsColumn.Argument" ), ColumnInfo.COLUMN_TYPE_TEXT,
             false, true, 126 ), // Stepname
-          new ColumnInfo( BaseMessages.getString( PKG, prefix + ".ParamsColumn.Default" ), ColumnInfo.COLUMN_TYPE_TEXT,
-              false, true, 138 ), // Preview size
+      new ColumnInfo( BaseMessages.getString( PKG, prefix + ".ParamsColumn.Default" ), ColumnInfo.COLUMN_TYPE_TEXT,
+          false, true, 138 ), // Preview size
 
-          new ColumnInfo( BaseMessages.getString( PKG, prefix + ".ParamsColumn.Value" ), ColumnInfo.COLUMN_TYPE_TEXT,
-              false, false, 142 ), // Preview size
+      new ColumnInfo( BaseMessages.getString( PKG, prefix + ".ParamsColumn.Value" ), ColumnInfo.COLUMN_TYPE_TEXT,
+          false, false, 142 ), // Preview size
 
-          new ColumnInfo( BaseMessages.getString( PKG, prefix + ".ParamsColumn.Description" ),
-              ColumnInfo.COLUMN_TYPE_TEXT, false, true, 181 ), // Preview size
+      new ColumnInfo( BaseMessages.getString( PKG, prefix + ".ParamsColumn.Description" ),
+          ColumnInfo.COLUMN_TYPE_TEXT, false, true, 181 ), // Preview size
     };
 
     String[] namedParams = abstractMeta.listParameters();
@@ -315,10 +318,10 @@ public abstract class ConfigurationDialog extends Dialog {
     tbtmVariables.setControl( variablesComposite );
 
     ColumnInfo[] cVariables =
-        { new ColumnInfo( BaseMessages.getString( PKG, prefix + ".VariablesColumn.Argument" ),
+    { new ColumnInfo( BaseMessages.getString( PKG, prefix + ".VariablesColumn.Argument" ),
             ColumnInfo.COLUMN_TYPE_TEXT, false, false, 287 ), // Stepname
-          new ColumnInfo( BaseMessages.getString( PKG, prefix + ".VariablesColumn.Value" ), ColumnInfo.COLUMN_TYPE_TEXT,
-              false, false, 300 ), // Preview size
+      new ColumnInfo( BaseMessages.getString( PKG, prefix + ".VariablesColumn.Value" ), ColumnInfo.COLUMN_TYPE_TEXT,
+          false, false, 300 ), // Preview size
     };
 
     int nrVariables = configuration.getVariables() != null ? configuration.getVariables().size() : 0;
@@ -339,38 +342,12 @@ public abstract class ConfigurationDialog extends Dialog {
 
     // Bottom buttons and separator
 
-    Button alwaysShowOption = new Button( shell, SWT.CHECK );
+    alwaysShowOption = new Button( shell, SWT.CHECK );
     props.setLook( alwaysShowOption );
     fd_tabFolder.bottom = new FormAttachment( 100, -106 );
-    final boolean isTrans = abstractMeta instanceof TransMeta;
-    final boolean isJob = abstractMeta instanceof JobMeta;
-    alwaysShowOption.setSelection( isTrans ? abstractMeta.isAlwaysShowTransCheckbox() : isJob ? abstractMeta
-        .isAlwaysShowJobCheckbox() : true );
-    
+    alwaysShowOption.setSelection( abstractMeta.isAlwaysShowRunOptions() );
+
     alwaysShowOption.setToolTipText( BaseMessages.getString( PKG, prefix + ".alwaysShowOption" ) );
-    
-    alwaysShowOption.addSelectionListener( new SelectionAdapter() {
-      public void widgetSelected( SelectionEvent e ) {
-        Button btn = (Button) e.getSource();
-        if ( btn.getSelection() ) {
-          if ( isTrans ) {
-            abstractMeta.setAlwaysShowTransCheckbox( true );
-            abstractMeta.setShowTransDialog( true );
-          } else if ( isJob ) {
-            abstractMeta.setAlwaysShowJobCheckbox( true );
-            abstractMeta.setShowJobDialog( true );
-          }
-        } else {
-          if ( isTrans ) {
-            abstractMeta.setAlwaysShowTransCheckbox( false );
-            abstractMeta.setShowTransDialog( false );
-          } else if ( isJob ) {
-            abstractMeta.setAlwaysShowJobCheckbox( false );
-            abstractMeta.setShowJobDialog( false );
-          }
-        }
-      }
-    } );
 
     FormData fd_alwaysShowOption = new FormData();
     fd_alwaysShowOption.left = new FormAttachment( 0, 15 );
@@ -483,21 +460,41 @@ public abstract class ConfigurationDialog extends Dialog {
       }
     } );
 
-    wExecRemote = new Button( gLocal, SWT.RADIO );
-    wExecRemote.setText( BaseMessages.getString( PKG, prefix + ".ExecRemote.Label" ) );
-    wExecRemote.setToolTipText( BaseMessages.getString( PKG, prefix + ".ExecRemote.Tooltip" ) );
-    props.setLook( wExecRemote );
-    fdExecLocal.left = new FormAttachment( wExecRemote, 0, SWT.LEFT );
-    fdExecRemote = new FormData();
-    fdExecRemote.left = new FormAttachment( 0, 10 );
-    fdExecRemote.top = new FormAttachment( wExecLocal, 7 );
-    wExecRemote.setLayoutData( fdExecRemote );
-    wExecRemote.addSelectionListener( new SelectionAdapter() {
-      public void widgetSelected( SelectionEvent e ) {
-        stackedLayout.topControl = serverOptionsComposite;
-        stackedLayoutComposite.layout();
-      }
-    } );
+    if ( abstractMeta.getSlaveServers() == null || abstractMeta.getSlaveServers().size() == 0 ) {
+      composite = new Composite( gLocal, SWT.NONE );
+      composite.setLayout( new FormLayout() );
+      props.setLook( composite );
+      composite.setToolTipText( BaseMessages.getString( PKG, prefix + ".ExecRemote.DisabledTooltip" ) );
+      fdExecLocal.left = new FormAttachment( composite, 0, SWT.LEFT );
+      fdComposite = new FormData();
+      fdComposite.left = new FormAttachment( wExecLocal, 10, SWT.LEFT );
+      fdComposite.top = new FormAttachment( wExecLocal, 7 );
+      composite.setLayoutData( fdComposite );
+
+      wExecRemote = new Button( composite, SWT.RADIO );
+      wExecRemote.setText( BaseMessages.getString( PKG, prefix + ".ExecRemote.Label" ) );
+      props.setLook( wExecRemote );
+      wExecRemote.setEnabled( false );
+      fdExecRemote = new FormData();
+      fdExecRemote.top = new FormAttachment( 0 );
+      wExecRemote.setLayoutData( fdExecRemote );
+    } else {
+      wExecRemote = new Button( gLocal, SWT.RADIO );
+      wExecRemote.setText( BaseMessages.getString( PKG, prefix + ".ExecRemote.Label" ) );
+      wExecRemote.setToolTipText( BaseMessages.getString( PKG, prefix + ".ExecRemote.Tooltip" ) );
+      props.setLook( wExecRemote );
+      fdExecLocal.left = new FormAttachment( wExecRemote, 0, SWT.LEFT );
+      fdExecRemote = new FormData();
+      fdExecRemote.left = new FormAttachment( 0, 10 );
+      fdExecRemote.top = new FormAttachment( wExecLocal, 7 );
+      wExecRemote.setLayoutData( fdExecRemote );
+      wExecRemote.addSelectionListener( new SelectionAdapter() {
+        public void widgetSelected( SelectionEvent e ) {
+          stackedLayout.topControl = serverOptionsComposite;
+          stackedLayoutComposite.layout();
+        }
+      } );
+    }
 
     // separator
     environmentSeparator = new Label( gLocal, SWT.SEPARATOR | SWT.VERTICAL );

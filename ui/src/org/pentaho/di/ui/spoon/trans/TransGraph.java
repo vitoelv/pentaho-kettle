@@ -402,6 +402,7 @@ public class TransGraph extends AbstractGraph implements XulEventHandler, Redraw
     this.transMeta = transMeta;
     this.areaOwners = new ArrayList<AreaOwner>();
     this.log = spoon.getLog();
+    spoon.selectionFilter.setText( "" );
 
     this.mouseOverSteps = new ArrayList<StepMeta>();
     this.delayTimers = new HashMap<StepMeta, DelayTimer>();
@@ -1708,7 +1709,6 @@ public class TransGraph extends AbstractGraph implements XulEventHandler, Redraw
             item1.addSelectionListener( new SelectionAdapter() {
               @Override
               public void widgetSelected( SelectionEvent e1 ) {
-                transMeta.setShowTransDialog( transMeta.isAlwaysShowTransCheckbox() );
                 runTransformation();
               }
             } );
@@ -1719,14 +1719,12 @@ public class TransGraph extends AbstractGraph implements XulEventHandler, Redraw
             item2.addSelectionListener( new SelectionAdapter() {
               @Override
               public void widgetSelected( SelectionEvent e2 ) {
-                transMeta.setShowTransDialog( true );
                 runOptionsTransformation();
               }
             } );
             menu.setLocation( shell.getDisplay().map( mainComposite.getParent(), null, mainComposite.getLocation() ) );
             menu.setVisible( true );
           } else {
-            transMeta.setShowTransDialog( transMeta.isAlwaysShowTransCheckbox() );
             runTransformation();
           }
         }
@@ -2725,7 +2723,7 @@ public class TransGraph extends AbstractGraph implements XulEventHandler, Redraw
     final TransHopMeta hi = findHop( x, y );
     // check the area owner list...
     //
-    StringBuffer tip = new StringBuffer();
+    StringBuilder tip = new StringBuilder();
     AreaOwner areaOwner = getVisibleAreaOwner( x, y );
     if ( areaOwner != null ) {
       switch ( areaOwner.getAreaType() ) {

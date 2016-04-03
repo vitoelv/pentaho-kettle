@@ -149,13 +149,12 @@ public class JobExecutionConfigurationDialog extends ConfigurationDialog {
     props.setLook( wLogLevel );
     FormData fdLogLevel = new FormData();
     fdLogLevel.left = new FormAttachment( wlLogLevel, 6 );
-    fdLogLevel.width = 200;
     if ( Const.isOSX() ) {
       fdLogLevel.top = new FormAttachment( wClearLog, 2, SWT.TOP );
     } else {
       fdLogLevel.top = new FormAttachment( wClearLog, -2, SWT.TOP );
     }
-    fdLogLevel.right = new FormAttachment( 0, 500 );
+    fdLogLevel.right = new FormAttachment( 0, 540 );
     wLogLevel.setLayoutData( fdLogLevel );
     wLogLevel.setItems( LogLevel.getLogLevelDescriptions() );
 
@@ -203,7 +202,8 @@ public class JobExecutionConfigurationDialog extends ConfigurationDialog {
     optionsSectionLayout( PKG, "JobExecutionConfigurationDialog" );
     parametersSectionLayout( PKG, "JobExecutionConfigurationDialog" );
 
-    String docUrl = BaseMessages.getString( Spoon.class, "Spoon.JobExecutionConfigurationDialog.Help" );
+    String docUrl =
+        Const.getDocUrl( BaseMessages.getString( Spoon.class, "Spoon.JobExecutionConfigurationDialog.Help" ) );
     String docTitle = BaseMessages.getString( PKG, "JobExecutionConfigurationDialog.docTitle" );
     String docHeader = BaseMessages.getString( PKG, "JobExecutionConfigurationDialog.docHeader" );
     buttonsSectionLayout( PKG, "JobExecutionConfigurationDialog", docTitle, docUrl, docHeader );
@@ -244,7 +244,14 @@ public class JobExecutionConfigurationDialog extends ConfigurationDialog {
 
   public void getData() {
     wExecLocal.setSelection( configuration.isExecutingLocally() );
+    if ( configuration.isExecutingLocally() ) {
+      stackedLayout.topControl = localOptionsComposite;
+    }
     wExecRemote.setSelection( configuration.isExecutingRemotely() );
+    if ( configuration.isExecutingRemotely() ) {
+      stackedLayout.topControl = serverOptionsComposite;
+    }
+
     wSafeMode.setSelection( configuration.isSafeModeEnabled() );
     wClearLog.setSelection( configuration.isClearingLog() );
     wRemoteHost.setText( configuration.getRemoteServer() == null ? "" : configuration.getRemoteServer().toString() );

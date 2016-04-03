@@ -309,6 +309,7 @@ public class JobGraph extends AbstractGraph implements XulEventHandler, Redrawab
     this.log = spoon.getLog();
     this.spoon = spoon;
     this.jobMeta = jobMeta;
+    spoon.selectionFilter.setText( "" );
 
     this.props = PropsUI.getInstance();
     this.areaOwners = new ArrayList<AreaOwner>();
@@ -1407,7 +1408,6 @@ public class JobGraph extends AbstractGraph implements XulEventHandler, Redrawab
             item1.addSelectionListener( new SelectionAdapter() {
               @Override
               public void widgetSelected( SelectionEvent e1 ) {
-                jobMeta.setShowJobDialog( jobMeta.isAlwaysShowJobCheckbox() );
                 runJob();
               }
             } );
@@ -1417,7 +1417,6 @@ public class JobGraph extends AbstractGraph implements XulEventHandler, Redrawab
             item2.addSelectionListener( new SelectionAdapter() {
               @Override
               public void widgetSelected( SelectionEvent e2 ) {
-                jobMeta.setShowJobDialog( true );
                 runOptionsJob();
               }
             } );
@@ -1425,7 +1424,6 @@ public class JobGraph extends AbstractGraph implements XulEventHandler, Redrawab
             menu.setLocation( shell.getDisplay().map( mainComposite.getParent(), null, mainComposite.getLocation() ) );
             menu.setVisible( true );
           } else {
-            jobMeta.setShowJobDialog( jobMeta.isAlwaysShowJobCheckbox() );
             runJob();
           }
         }
@@ -2287,7 +2285,7 @@ public class JobGraph extends AbstractGraph implements XulEventHandler, Redrawab
 
     // check the area owner list...
     //
-    StringBuffer tip = new StringBuffer();
+    StringBuilder tip = new StringBuilder();
     AreaOwner areaOwner = getVisibleAreaOwner( x, y );
     if ( areaOwner != null ) {
       JobEntryCopy jobEntryCopy;

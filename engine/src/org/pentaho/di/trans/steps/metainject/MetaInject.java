@@ -28,8 +28,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import org.pentaho.di.core.Const;
@@ -241,7 +243,26 @@ public class MetaInject extends BaseStep implements StepInterface {
         if ( rows != null && !rows.isEmpty() ) {
           // Which metadata key is this referencing? Find the attribute key in the metadata entries...
           //
-          injector.setProperty( targetStepMeta, target.getAttributeKey(), rows, source.getField() );
+          if ( injector.hasProperty( targetStepMeta, target.getAttributeKey() ) ) {
+            // target step has specified key
+            boolean skip = false;
+            for ( RowMetaAndData r : rows ) {
+              if ( r.getRowMeta().indexOfValue( source.getField() ) < 0 ) {
+                logError( BaseMessages.getString( PKG, "MetaInject.SourceFieldIsNotDefined.Message", source.getField(),
+                    getTransMeta().getName() ) );
+                // source step doesn't contain specified field
+                skip = true;
+              }
+            }
+            if ( !skip ) {
+              // specified field exist - need to inject
+              injector.setProperty( targetStepMeta, target.getAttributeKey(), rows, source.getField() );
+            }
+          } else {
+            // target step doesn't have specified key - just report but don't fail like in 6.0 (BACKLOG-6753)
+            logError( BaseMessages.getString( PKG, "MetaInject.TargetKeyIsNotDefined.Message", target.getAttributeKey(),
+                getTransMeta().getName() ) );
+          }
         }
       }
     }
@@ -422,7 +443,10 @@ public class MetaInject extends BaseStep implements StepInterface {
     setEntryValue( entry, row, source );
   }
 
-  private void setEntryValue( StepInjectionMetaEntry entry, RowMetaAndData row, SourceStepField source )
+  /**
+   * package-local visibility for testing purposes
+   */
+  static void setEntryValue( StepInjectionMetaEntry entry, RowMetaAndData row, SourceStepField source )
     throws KettleValueException {
     // A standard attribute, a single row of data...
     //
@@ -462,9 +486,8 @@ public class MetaInject extends BaseStep implements StepInterface {
         data.transMeta.copyVariablesFrom( this );
         data.transMeta.copyParametersFrom( this.getTransMeta() );
 
-        if ( !checkSoureStepsAvailability() || !checkTargetStepsAvailability() ) {
-          return false;
-        }
+        checkSoureStepsAvailability();
+        checkTargetStepsAvailability();
         // Get a mapping between the step name and the injection...
         //
         // Get new injection info
@@ -503,52 +526,94 @@ public class MetaInject extends BaseStep implements StepInterface {
     return false;
   }
 
-  private boolean checkTargetStepsAvailability() {
+  private void checkTargetStepsAvailability() {
     Set<String> existedStepNames = convertToUpperCaseSet( data.transMeta.getStepNames() );
-    Set<String> usedStepNames = getUsedStepsForReferencendTransformation();
     Map<TargetStepAttribute, SourceStepField> targetMap = meta.getTargetSourceMapping();
-    Set<String> alreadyMarked = new HashSet<String>();
-    for ( TargetStepAttribute currentTarget : targetMap.keySet() ) {
-      if ( !usedStepNames.contains( currentTarget.getStepname().toUpperCase() ) && !alreadyMarked.contains(
-          currentTarget.getStepname() ) ) {
-        alreadyMarked.add( currentTarget.getStepname() );
-        if ( existedStepNames.contains( currentTarget.getStepname().toUpperCase() ) ) {
-          logError( BaseMessages.getString( PKG, "MetaInject.TargetStepIsNotUsed.Message", currentTarget.getStepname(),
-              data.transMeta.getName() ) );
-        } else {
-          logError( BaseMessages.getString( PKG, "MetaInject.TargetStepIsNotDefined.Message", currentTarget
-              .getStepname(), data.transMeta.getName() ) );
-        }
+    Set<TargetStepAttribute> unavailableTargetSteps = getUnavailableTargetSteps( targetMap, data.transMeta );
+    Set<String> alreadyMarkedSteps = new HashSet<String>();
+    for ( TargetStepAttribute currentTarget : unavailableTargetSteps ) {
+      if ( alreadyMarkedSteps.contains( currentTarget.getStepname() ) ) {
+        continue;
+      }
+      alreadyMarkedSteps.add( currentTarget.getStepname() );
+      if ( existedStepNames.contains( currentTarget.getStepname().toUpperCase() ) ) {
+        logError( BaseMessages.getString( PKG, "MetaInject.TargetStepIsNotUsed.Message", currentTarget.getStepname(),
+            data.transMeta.getName() ) );
+      } else {
+        logError( BaseMessages.getString( PKG, "MetaInject.TargetStepIsNotDefined.Message", currentTarget.getStepname(),
+            data.transMeta.getName() ) );
       }
     }
-    return alreadyMarked.isEmpty();
+    // alreadyMarked contains wrong steps. Spoon can report error if it will not fail transformation [BACKLOG-6753]
   }
 
-  private Set<String> getUsedStepsForReferencendTransformation() {
+  public static void removeUnavailableStepsFromMapping( Map<TargetStepAttribute, SourceStepField> targetMap,
+      Set<SourceStepField> unavailableSourceSteps, Set<TargetStepAttribute> unavailableTargetSteps ) {
+    Iterator<Entry<TargetStepAttribute, SourceStepField>> targetMapIterator = targetMap.entrySet().iterator();
+    while ( targetMapIterator.hasNext() ) {
+      Entry<TargetStepAttribute, SourceStepField> entry = targetMapIterator.next();
+      SourceStepField currentSourceStepField = entry.getValue();
+      TargetStepAttribute currentTargetStepAttribute = entry.getKey();
+      if ( unavailableSourceSteps.contains( currentSourceStepField ) || unavailableTargetSteps.contains(
+          currentTargetStepAttribute ) ) {
+        targetMapIterator.remove();
+      }
+    }
+  }
+
+  public static Set<TargetStepAttribute> getUnavailableTargetSteps( Map<TargetStepAttribute, SourceStepField> targetMap,
+      TransMeta injectedTransMeta ) {
+    Set<String> usedStepNames = getUsedStepsForReferencendTransformation( injectedTransMeta );
+    Set<TargetStepAttribute> unavailableTargetSteps = new HashSet<TargetStepAttribute>();
+    for ( TargetStepAttribute currentTarget : targetMap.keySet() ) {
+      if ( !usedStepNames.contains( currentTarget.getStepname().toUpperCase() ) ) {
+        unavailableTargetSteps.add( currentTarget );
+      }
+    }
+    return Collections.unmodifiableSet( unavailableTargetSteps );
+  }
+
+  private static Set<String> getUsedStepsForReferencendTransformation( TransMeta transMeta ) {
     Set<String> usedStepNames = new HashSet<String>();
-    for ( StepMeta currentStep : data.transMeta.getUsedSteps() ) {
+    for ( StepMeta currentStep : transMeta.getUsedSteps() ) {
       usedStepNames.add( currentStep.getName().toUpperCase() );
     }
     return usedStepNames;
   }
 
-  private boolean checkSoureStepsAvailability() {
-    String[] stepNamesArray = getTransMeta().getPrevStepNames( getStepMeta() );
+  public static Set<SourceStepField> getUnavailableSourceSteps( Map<TargetStepAttribute, SourceStepField> targetMap,
+      TransMeta sourceTransMeta, StepMeta stepMeta ) {
+    String[] stepNamesArray = sourceTransMeta.getPrevStepNames( stepMeta );
     Set<String> existedStepNames = convertToUpperCaseSet( stepNamesArray );
-    Map<TargetStepAttribute, SourceStepField> targetMap = meta.getTargetSourceMapping();
-    Set<String> alreadyMarked = new HashSet<String>();
+    Set<SourceStepField> unavailableSourceSteps = new HashSet<SourceStepField>();
     for ( SourceStepField currentSource : targetMap.values() ) {
-      if ( !existedStepNames.contains( currentSource.getStepname().toUpperCase() ) && !alreadyMarked.contains(
-          currentSource.getStepname() ) ) {
-        alreadyMarked.add( currentSource.getStepname() );
-        logError( BaseMessages.getString( PKG, "MetaInject.SourceStepIsNotAvailable.Message", currentSource
-            .getStepname(), getTransMeta().getName() ) );
+      if ( !existedStepNames.contains( currentSource.getStepname().toUpperCase() ) ) {
+        unavailableSourceSteps.add( currentSource );
       }
     }
-    return alreadyMarked.isEmpty();
+    return Collections.unmodifiableSet( unavailableSourceSteps );
   }
 
-  private Set<String> convertToUpperCaseSet( String[] array ) {
+  private void checkSoureStepsAvailability() {
+    Map<TargetStepAttribute, SourceStepField> targetMap = meta.getTargetSourceMapping();
+    Set<SourceStepField> unavailableSourceSteps =
+        getUnavailableSourceSteps( targetMap, getTransMeta(), getStepMeta() );
+    Set<String> alreadyMarkedSteps = new HashSet<String>();
+    for ( SourceStepField currentSource : unavailableSourceSteps ) {
+      if ( alreadyMarkedSteps.contains( currentSource.getStepname() ) ) {
+        continue;
+      }
+      alreadyMarkedSteps.add( currentSource.getStepname() );
+      logError( BaseMessages.getString( PKG, "MetaInject.SourceStepIsNotAvailable.Message", currentSource.getStepname(),
+          getTransMeta().getName() ) );
+    }
+    // alreadyMarked contains wrong steps. Spoon can report error if it will not fail transformation [BACKLOG-6753]
+  }
+
+  /**
+   * package-local visibility for testing purposes
+   */
+  static Set<String> convertToUpperCaseSet( String[] array ) {
     if ( array == null ) {
       return Collections.emptySet();
     }

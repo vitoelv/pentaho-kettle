@@ -25,6 +25,7 @@ package org.pentaho.di.trans.steps.excelinput;
 import org.pentaho.di.core.injection.Injection;
 import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
+import org.pentaho.di.core.row.value.ValueMetaBase;
 
 /**
  * Describes a single field in an excel file
@@ -41,7 +42,6 @@ public class ExcelInputField implements Cloneable {
   private int length = -1;
   @Injection( name = "PRECISION", group = "FIELDS" )
   private int precision = -1;
-  @Injection( name = "TRIM_TYPE", group = "FIELDS" )
   private int trimtype;
   @Injection( name = "FORMAT", group = "FIELDS" )
   private String format;
@@ -135,6 +135,11 @@ public class ExcelInputField implements Cloneable {
 
   public void setTrimType( int trimtype ) {
     this.trimtype = trimtype;
+  }
+
+  @Injection( name = "TRIM_TYPE", group = "FIELDS" )
+  public void setTrimType( String trimType ) {
+    this.trimtype = ValueMetaBase.getTrimTypeByCode( trimType );
   }
 
   public String getGroupSymbol() {

@@ -420,13 +420,11 @@ public class TextFileInputMeta extends BaseFileInputStepMeta implements StepMeta
 
     retval.allocate( nrfiles, nrfields, nrfilters );
 
-    for ( int i = 0; i < nrfiles; i++ ) {
-      retval.inputFiles.fileName[i] = inputFiles.fileName[i];
-      retval.inputFiles.fileMask[i] = inputFiles.fileMask[i];
-      retval.inputFiles.excludeFileMask[i] = inputFiles.excludeFileMask[i];
-      retval.inputFiles.fileRequired[i] = inputFiles.fileRequired[i];
-      retval.inputFiles.includeSubFolders[i] = inputFiles.includeSubFolders[i];
-    }
+    System.arraycopy( inputFiles.fileName, 0, retval.inputFiles.fileName, 0, nrfiles );
+    System.arraycopy( inputFiles.fileMask, 0, retval.inputFiles.fileMask, 0, nrfiles );
+    System.arraycopy( inputFiles.excludeFileMask, 0, retval.inputFiles.excludeFileMask, 0, nrfiles );
+    System.arraycopy( inputFiles.fileRequired, 0, retval.inputFiles.fileRequired, 0, nrfiles );
+    System.arraycopy( inputFiles.includeSubFolders, 0, retval.inputFiles.includeSubFolders, 0, nrfiles );
 
     for ( int i = 0; i < nrfields; i++ ) {
       retval.inputFiles.inputFields[i] = (BaseFileInputField) inputFiles.inputFields[i].clone();
@@ -674,7 +672,7 @@ public class TextFileInputMeta extends BaseFileInputStepMeta implements StepMeta
   }
 
   public String getXML() {
-    StringBuffer retval = new StringBuffer( 1500 );
+    StringBuilder retval = new StringBuilder( 1500 );
 
     retval.append( "    " ).append( XMLHandler.addTagValue( "accept_filenames", inputFiles.acceptingFilenames ) );
     retval.append( "    " ).append( XMLHandler.addTagValue( "passing_through_fields", inputFiles.passingThruFields ) );
@@ -1258,7 +1256,7 @@ public class TextFileInputMeta extends BaseFileInputStepMeta implements StepMeta
     return XMLHandler.getNodeValue( filenamenode );
   }
 
-  protected void saveSource( StringBuffer retVal, String source ) {
+  protected void saveSource( StringBuilder retVal, String source ) {
     retVal.append( "      " ).append( XMLHandler.addTagValue( "name", source ) );
   }
 

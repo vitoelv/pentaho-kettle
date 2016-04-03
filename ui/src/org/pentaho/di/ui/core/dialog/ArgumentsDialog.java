@@ -82,10 +82,10 @@ public class ArgumentsDialog extends Dialog {
     shell.setText( BaseMessages.getString( PKG, "ArgumentsDialog.Arguments.Label" ) );
 
     ColumnInfo[] cArguments =
-        { new ColumnInfo( BaseMessages.getString( PKG, "ArgumentsDialog.ArgumentsColumn.Argument" ),
+    { new ColumnInfo( BaseMessages.getString( PKG, "ArgumentsDialog.ArgumentsColumn.Argument" ),
             ColumnInfo.COLUMN_TYPE_TEXT, false, true, 180 ), // Argument name
-          new ColumnInfo( BaseMessages.getString( PKG, "ArgumentsDialog.ArgumentsColumn.Value" ),
-              ColumnInfo.COLUMN_TYPE_TEXT, false, false, 172 ), // Actual value
+      new ColumnInfo( BaseMessages.getString( PKG, "ArgumentsDialog.ArgumentsColumn.Value" ),
+            ColumnInfo.COLUMN_TYPE_TEXT, false, false, 172 ), // Actual value
     };
 
     int nrArguments = configuration.getArguments() != null ? configuration.getArguments().size() : 0;
@@ -112,7 +112,7 @@ public class ArgumentsDialog extends Dialog {
     okButton.setText( "OK" );
     FormData fd_okButton = new FormData();
     if ( Const.isOSX() ) {
-      fd_okButton.left = new FormAttachment( 0, 239 );
+      fd_okButton.left = new FormAttachment( 0, 215 );
     } else {
       fd_okButton.left = new FormAttachment( 0, 269 );
     }
@@ -148,7 +148,7 @@ public class ArgumentsDialog extends Dialog {
     btnHelp.addSelectionListener( new SelectionAdapter() {
       @Override
       public void widgetSelected( SelectionEvent evt ) {
-        String docUrl = BaseMessages.getString( Spoon.class, "Spoon.ArgumentsDialog.Help" );
+        String docUrl = Const.getDocUrl( BaseMessages.getString( Spoon.class, "Spoon.ArgumentsDialog.Help" ) );
         String docTitle = BaseMessages.getString( PKG, "ArgumentsDialog.docTitle" );
         String docHeader = BaseMessages.getString( PKG, "ArgumentsDialog.docHeader" );
         HelpUtils.openHelpDialog( parent.getShell(), docTitle, docUrl, docHeader );

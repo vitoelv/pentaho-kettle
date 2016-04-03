@@ -25,17 +25,24 @@ package org.pentaho.di.core.injection.bean;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import org.pentaho.di.core.injection.Injection;
 import org.pentaho.di.core.injection.InjectionDeep;
+import org.pentaho.di.core.injection.InjectionTypeConverter;
 
 /**
  * Storage for one step on the bean deep level.
  */
 class BeanLevelInfo {
+  enum DIMENSION {
+    NONE, ARRAY, LIST
+  };
+
   /** Parent step or null for root. */
   public BeanLevelInfo parent;
   /** Class for step from field or methods. */
@@ -44,8 +51,12 @@ class BeanLevelInfo {
   public Field field;
   /** Getter and setter. */
   public Method getter, setter;
-  /** Flag for mark array. */
-  public boolean array;
+  /** Dimension of level. */
+  public DIMENSION dim = DIMENSION.NONE;
+  /** Values converter. */
+  public InjectionTypeConverter converter;
+  /** False if source empty value shoudn't affect on target field. */
+  public boolean convertEmpty;
 
   public void init( BeanInjectionInfo info ) {
     introspect( info, leafClass );
@@ -69,65 +80,115 @@ class BeanLevelInfo {
    */
   protected void introspect( BeanInjectionInfo info, Field[] fields, Method[] methods ) {
     for ( Field f : fields ) {
-      if ( f.isSynthetic() || f.isEnumConstant() || Modifier.isStatic( f.getModifiers() ) ) {
-        // fields can't contain real data
+      Injection annotationInjection = f.getAnnotation( Injection.class );
+      InjectionDeep annotationInjectionDeep = f.getAnnotation( InjectionDeep.class );
+      if ( annotationInjection == null && annotationInjectionDeep == null ) {
+        // no injection annotations
         continue;
+      }
+      if ( annotationInjection != null && annotationInjectionDeep != null ) {
+        // both annotations exist - wrong
+        throw new RuntimeException( "Field can't be annotated twice for injection " + f );
+      }
+      if ( f.isSynthetic() || f.isEnumConstant() || Modifier.isStatic( f.getModifiers() ) ) {
+        // fields can't contain real data with such modifier
+        throw new RuntimeException( "Wrong modifier for anotated field " + f );
       }
       BeanLevelInfo leaf = new BeanLevelInfo();
       leaf.parent = this;
       leaf.field = f;
       if ( f.getType().isArray() ) {
-        leaf.array = true;
+        leaf.dim = DIMENSION.ARRAY;
         leaf.leafClass = f.getType().getComponentType();
+      } else if ( List.class.isAssignableFrom( f.getType() ) ) {
+        leaf.dim = DIMENSION.LIST;
+        Type fieldType = f.getGenericType();
+        Type listType = ( (ParameterizedType) fieldType ).getActualTypeArguments()[0];
+        try {
+          leaf.leafClass = Class.forName( listType.getTypeName(), false, leafClass.getClassLoader() );
+        } catch ( Throwable ex ) {
+          throw new RuntimeException( "Can't retrieve type from List for " + f );
+        }
       } else {
-        leaf.array = false;
+        leaf.dim = DIMENSION.NONE;
         leaf.leafClass = f.getType();
       }
-      Injection metaInj = f.getAnnotation( Injection.class );
-      if ( metaInj != null ) {
-        info.addInjectionProperty( metaInj, leaf );
-      } else if ( f.isAnnotationPresent( InjectionDeep.class ) ) {
+      if ( annotationInjection != null ) {
+        try {
+          leaf.converter = annotationInjection.converter().newInstance();
+        } catch ( Exception ex ) {
+          throw new RuntimeException( "Error instantiate converter for " + f, ex );
+        }
+        leaf.convertEmpty = annotationInjection.convertEmpty();
+        info.addInjectionProperty( annotationInjection, leaf );
+      } else if ( annotationInjectionDeep != null ) {
         // introspect deeper
         leaf.init( info );
       }
     }
     for ( Method m : methods ) {
-      if ( m.isSynthetic() || Modifier.isStatic( m.getModifiers() ) ) {
-        // method is static
+      Injection annotationInjection = m.getAnnotation( Injection.class );
+      InjectionDeep annotationInjectionDeep = m.getAnnotation( InjectionDeep.class );
+      if ( annotationInjection == null && annotationInjectionDeep == null ) {
+        // no injection annotations
         continue;
       }
-
-      Injection metaInj = m.getAnnotation( Injection.class );
-      if ( metaInj != null || m.isAnnotationPresent( InjectionDeep.class ) ) {
-        // fill info
-        BeanLevelInfo leaf = new BeanLevelInfo();
-        leaf.parent = this;
-        if ( isGetter( m ) ) {
-          leaf.getter = m;
-          leaf.leafClass = m.getReturnType();
-        } else if ( isSetter( m ) ) {
-          leaf.setter = m;
-          leaf.leafClass = m.getParameterTypes()[0];
-        } else {
-          continue;
+      if ( annotationInjection != null && annotationInjectionDeep != null ) {
+        // both annotations exist - wrong
+        throw new RuntimeException( "Method can't be annotated twice for injection " + m );
+      }
+      if ( m.isSynthetic() || Modifier.isStatic( m.getModifiers() ) ) {
+        // method is static
+        throw new RuntimeException( "Wrong modifier for anotated method " + m );
+      }
+      BeanLevelInfo leaf = new BeanLevelInfo();
+      leaf.parent = this;
+      if ( annotationInjectionDeep != null ) {
+        Class<?> getterClass = isGetter( m );
+        if ( getterClass == null || getterClass.isArray() ) {
+          throw new RuntimeException( "Method should be getter: " + m );
         }
-        leaf.array = false;
-        if ( metaInj != null ) {
-          info.addInjectionProperty( metaInj, leaf );
-        } else if ( m.isAnnotationPresent( InjectionDeep.class ) ) {
-          // introspect deeper
-          leaf.init( info );
+        leaf.getter = m;
+        leaf.leafClass = getterClass;
+        leaf.init( info );
+      } else {
+        Class<?> setterClass = isSetter( m );
+        if ( setterClass == null || setterClass.isArray() ) {
+          throw new RuntimeException( "Method should be setter: " + m );
         }
+        leaf.setter = m;
+        leaf.leafClass = setterClass;
+        try {
+          leaf.converter = annotationInjection.converter().newInstance();
+        } catch ( Exception ex ) {
+          throw new RuntimeException( "Error instantiate converter for " + m, ex );
+        }
+        leaf.convertEmpty = annotationInjection.convertEmpty();
+        info.addInjectionProperty( annotationInjection, leaf );
       }
     }
   }
 
-  private boolean isGetter( Method m ) {
-    return m.getReturnType() != void.class && m.getParameterTypes().length == 0;
+  private Class<?> isGetter( Method m ) {
+    if ( m.getReturnType() == void.class ) {
+      return null;
+    }
+    if ( m.getParameterTypes().length == 0 ) {
+      // getter without parameters
+      return m.getReturnType();
+    }
+    return null;
   }
 
-  private boolean isSetter( Method m ) {
-    return m.getReturnType() == void.class && m.getParameterTypes().length == 1;
+  private Class<?> isSetter( Method m ) {
+    if ( m.getReturnType() != void.class ) {
+      return null;
+    }
+    if ( m.getParameterTypes().length == 1 ) {
+      // setter with one parameter
+      return m.getParameterTypes()[0];
+    }
+    return null;
   }
 
   protected List<BeanLevelInfo> createCallStack() {

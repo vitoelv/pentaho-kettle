@@ -54,7 +54,9 @@ public class TransExecutionConfigurationDialog extends ConfigurationDialog {
 
   private Button wExecCluster;
   private FormData fdExecCluster;
+  private FormData fdExecClusterComposite;
   private Composite clusteredOptionsComposite;
+  private Composite execClusterComposite;
   private Button showDialogRunCheckbox;
 
   public TransExecutionConfigurationDialog( Shell parent, TransExecutionConfiguration configuration,
@@ -166,13 +168,12 @@ public class TransExecutionConfigurationDialog extends ConfigurationDialog {
     props.setLook( wLogLevel );
     FormData fdLogLevel = new FormData();
     fdLogLevel.left = new FormAttachment( wlLogLevel, 6 );
-    fdLogLevel.width = 200;
     if ( Const.isOSX() ) {
       fdLogLevel.top = new FormAttachment( wClearLog, 2, SWT.TOP );
     } else {
       fdLogLevel.top = new FormAttachment( wClearLog, -2, SWT.TOP );
     }
-    fdLogLevel.right = new FormAttachment( 0, 500 );
+    fdLogLevel.right = new FormAttachment( 0, 540 );
     wLogLevel.setLayoutData( fdLogLevel );
     wLogLevel.setItems( LogLevel.getLogLevelDescriptions() );
   }
@@ -182,21 +183,52 @@ public class TransExecutionConfigurationDialog extends ConfigurationDialog {
     mainLayout( PKG, "TransExecutionConfigurationDialog", GUIResource.getInstance().getImageTransGraph() );
     environmentTypeSectionLayout( PKG, "TransExecutionConfigurationDialog" );
 
-    wExecCluster = new Button( gLocal, SWT.RADIO );
-    wExecCluster.setText( BaseMessages.getString( PKG, "TransExecutionConfigurationDialog.ExecCluster.Label" ) );
-    wExecCluster.setToolTipText( BaseMessages.getString( PKG,
-        "TransExecutionConfigurationDialog.ExecCluster.Tooltip" ) );
-    props.setLook( wExecCluster );
-    fdExecCluster = new FormData();
-    fdExecCluster.left = new FormAttachment( 0, 10 );
-    fdExecCluster.top = new FormAttachment( wExecRemote, 7 );
-    wExecCluster.setLayoutData( fdExecCluster );
-    wExecCluster.addSelectionListener( new SelectionAdapter() {
-      public void widgetSelected( SelectionEvent e ) {
-        stackedLayout.topControl = clusteredOptionsComposite;
-        stackedLayoutComposite.layout();
+    TransMeta transMeta = (TransMeta) abstractMeta;
+
+    // Check for cluster environment to enable/disable button
+    if ( transMeta.getClusterSchemas() == null || transMeta.getClusterSchemas().size() == 0 ) {
+      execClusterComposite = new Composite( gLocal, SWT.NONE );
+      execClusterComposite.setLayout( new FormLayout() );
+      execClusterComposite.setToolTipText( BaseMessages.getString( PKG,
+          "TransExecutionConfigurationDialog.ExecCluster.DisabledTooltip" ) );
+      props.setLook( execClusterComposite );
+      fdExecClusterComposite = new FormData();
+      fdExecClusterComposite.left = new FormAttachment( wExecLocal, 0, SWT.LEFT );
+      if ( abstractMeta.getSlaveServers() == null || abstractMeta.getSlaveServers().size() == 0 ) {
+        fdExecClusterComposite.top = new FormAttachment( composite, 7 );
+      } else {
+        fdExecClusterComposite.top = new FormAttachment( wExecRemote, 7 );
       }
-    } );
+      execClusterComposite.setLayoutData( fdExecClusterComposite );
+
+      wExecCluster = new Button( execClusterComposite, SWT.RADIO );
+      wExecCluster.setText( BaseMessages.getString( PKG, "TransExecutionConfigurationDialog.ExecCluster.Label" ) );
+      props.setLook( wExecCluster );
+      wExecCluster.setEnabled( false );
+      fdExecCluster = new FormData();
+      fdExecCluster.top = new FormAttachment( 0 );
+      wExecCluster.setLayoutData( fdExecCluster );
+    } else {
+      wExecCluster = new Button( gLocal, SWT.RADIO );
+      wExecCluster.setText( BaseMessages.getString( PKG, "TransExecutionConfigurationDialog.ExecCluster.Label" ) );
+      wExecCluster.setToolTipText( BaseMessages.getString( PKG,
+          "TransExecutionConfigurationDialog.ExecCluster.Tooltip" ) );
+      props.setLook( wExecCluster );
+      fdExecCluster = new FormData();
+      fdExecCluster.left = new FormAttachment( 0, 10 );
+      if ( abstractMeta.getSlaveServers() == null || abstractMeta.getSlaveServers().size() == 0 ) {
+        fdExecCluster.top = new FormAttachment( composite, 7 );
+      } else {
+        fdExecCluster.top = new FormAttachment( wExecRemote, 7 );
+      }
+      wExecCluster.setLayoutData( fdExecCluster );
+      wExecCluster.addSelectionListener( new SelectionAdapter() {
+        public void widgetSelected( SelectionEvent e ) {
+          stackedLayout.topControl = clusteredOptionsComposite;
+          stackedLayoutComposite.layout();
+        }
+      } );
+    }
 
     clusteredOptionsComposite = new Composite( stackedLayoutComposite, SWT.NONE );
     clusteredOptionsComposite.setLayout( new FormLayout() );
@@ -207,7 +239,8 @@ public class TransExecutionConfigurationDialog extends ConfigurationDialog {
     optionsSectionLayout( PKG, "TransExecutionConfigurationDialog" );
     parametersSectionLayout( PKG, "TransExecutionConfigurationDialog" );
 
-    String docUrl = BaseMessages.getString( Spoon.class, "Spoon.TransExecutionConfigurationDialog.Help" );
+    String docUrl =
+        Const.getDocUrl( BaseMessages.getString( Spoon.class, "Spoon.TransExecutionConfigurationDialog.Help" ) );
     String docTitle = BaseMessages.getString( PKG, "TransExecutionConfigurationDialog.docTitle" );
     String docHeader = BaseMessages.getString( PKG, "TransExecutionConfigurationDialog.docHeader" );
     buttonsSectionLayout( PKG, "TransExecutionConfigurationDialog", docTitle, docUrl, docHeader );
